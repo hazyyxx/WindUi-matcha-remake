@@ -131,10 +131,19 @@ local function loadIconSet(setName)
 	_iconSets[setName] = set or false
 	return _iconSets[setName] or nil
 end
+-- Optional: host your own icon PNGs and point names at them:
+--   MatchaUI.IconBaseUrl = "https://raw.githubusercontent.com/you/icons/main/"
+--   then Icon="house" -> that base .. "house" .. IconExt (default ".png")
+MatchaUI.IconBaseUrl = nil
+MatchaUI.IconExt = ".png"
 local function resolveIcon(name)
 	local setName,iconName = name:match("^([%w_]+):(.+)$")
-	if not setName then setName,iconName = MatchaUI.IconSet, name end
-	local set = loadIconSet(setName)
+	if not iconName then iconName = name end
+	if MatchaUI.IconBaseUrl then
+		return MatchaUI.IconBaseUrl .. iconName .. (MatchaUI.IconExt or ".png")
+	end
+	-- fallback: Footagesus rbxassetid map (only renders if the build can fetch asset bytes)
+	local set = loadIconSet(setName or MatchaUI.IconSet)
 	if type(set)=="table" then
 		local v = set[iconName]
 		if type(v)=="string" then return v end
@@ -249,7 +258,7 @@ end
 -- ============================================================
 -- VK table
 -- ============================================================
-local KV = {A=0x41,B=0x42,C=0x43,D=0x44,E=0x45,F=0x46,G=0x47,H=0x48,I=0x49,J=0x4A,K=0x4B,L=0x4C,M=0x4D,N=0x4E,O=0x4F,P=0x50,Q=0x51,R=0x52,S=0x53,T=0x54,U=0x55,V=0x56,W=0x57,X=0x58,Y=0x59,Z=0x5A,["0"]=0x30,["1"]=0x31,["2"]=0x32,["3"]=0x33,["4"]=0x34,["5"]=0x35,["6"]=0x36,["7"]=0x37,["8"]=0x38,["9"]=0x39,F1=0x70,F2=0x71,F3=0x72,F4=0x73,F5=0x74,F6=0x75,F7=0x76,F8=0x77,F9=0x78,F10=0x79,F11=0x7A,F12=0x7B,Space=0x20,Enter=0x0D,Escape=0x1B,Backspace=0x08,Tab=0x09,Shift=0x10,Ctrl=0x11,Alt=0x12,Delete=0x2E,Left=0x25,Up=0x26,Right=0x27,Down=0x28,LMB=0x01,RMB=0x02,MMB=0x04,Insert=0x2D,Home=0x24,End=0x23,PageUp=0x21,PageDown=0x22,LShift=0xA0,RShift=0xA1,LCtrl=0xA2,RCtrl=0xA3,LAlt=0xA4,RAlt=0xA5,CapsLock=0x14,["[`]"]=0xC0,Semicolon=0xBA,Comma=0xBC,Period=0xBE,Slash=0xBF}
+local KV = {A=0x41,B=0x42,C=0x43,D=0x44,E=0x45,F=0x46,G=0x47,H=0x48,I=0x49,J=0x4A,K=0x4B,L=0x4C,M=0x4D,N=0x4E,O=0x4F,P=0x50,Q=0x51,R=0x52,S=0x53,T=0x54,U=0x55,V=0x56,W=0x57,X=0x58,Y=0x59,Z=0x5A,["0"]=0x30,["1"]=0x31,["2"]=0x32,["3"]=0x33,["4"]=0x34,["5"]=0x35,["6"]=0x36,["7"]=0x37,["8"]=0x38,["9"]=0x39,F1=0x70,F2=0x71,F3=0x72,F4=0x73,F5=0x74,F6=0x75,F7=0x76,F8=0x77,F9=0x78,F10=0x79,F11=0x7A,F12=0x7B,Space=0x20,Enter=0x0D,Escape=0x1B,Backspace=0x08,Tab=0x09,Shift=0x10,Ctrl=0x11,Alt=0x12,Delete=0x2E,Left=0x25,Up=0x26,Right=0x27,Down=0x28,LMB=0x01,RMB=0x02,MMB=0x04,Insert=0x2D,Home=0x24,End=0x23,PageUp=0x21,PageDown=0x22,LShift=0xA0,RShift=0xA1,LCtrl=0xA2,RCtrl=0xA3,LAlt=0xA4,RAlt=0xA5,CapsLock=0x14,Tilde=0xC0,Semicolon=0xBA,Comma=0xBC,Period=0xBE,Slash=0xBF,Equals=0xBB,Minus=0xBD,LBracket=0xDB,RBracket=0xDD,Backslash=0xDC,Quote=0xDE,MB4=0x05,MB5=0x06,Num0=0x60,Num1=0x61,Num2=0x62,Num3=0x63,Num4=0x64,Num5=0x65,Num6=0x66,Num7=0x67,Num8=0x68,Num9=0x69,NumMul=0x6A,NumAdd=0x6B,NumSub=0x6D,NumDot=0x6E,NumDiv=0x6F}
 local VK = {}
 for k,v in pairs(KV) do VK[v]=k end
 -- VK → printable char for Input element
@@ -1274,6 +1283,11 @@ function MatchaUI:CreateWindow(config)
 		s:Keybind({Title="Menu Toggle Key", Desc="Show / hide this menu", Value=(VK[win._toggleKey] or "RShift"),
 			Callback=function(k) win:SetToggleKey(k) end})
 		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
+		local s2=t:Section({Title="Info"})
+		s2:Label({Title="Library", Value="MatchaUI v"..tostring(MatchaUI.Version)})
+		s2:Label({Title="Window", Value=tostring(win.Title)})
+		win._fpsLabel = s2:Label({Title="FPS", Value="--"})
+		s2:Paragraph({Title="MatchaUI", Desc="Drawing-based WindUI-style interface for Matcha."})
 		return t
 	end
 
@@ -1282,6 +1296,7 @@ function MatchaUI:CreateWindow(config)
 		win._alive=false
 		if win._iConn then pcall(function()win._iConn:Disconnect()end) end
 		if win._uisConn then pcall(function()win._uisConn:Disconnect()end) end
+		if win._fpsConn then pcall(function()win._fpsConn:Disconnect()end) end
 		if win._scrollConn then pcall(function()win._scrollConn:Disconnect()end) end
 		-- close dropdown popups
 		for _,tab2 in ipairs(win._tabs) do
@@ -1302,6 +1317,22 @@ function MatchaUI:CreateWindow(config)
 	if config.SettingsTab~=false then
 		task.spawn(function() task.wait(0.2); pcall(function() win:_addSettingsTab() end) end)
 	end
+
+	-- Real game FPS counter (drives the Settings > Info FPS label if present)
+	win._fps=0
+	pcall(function()
+		local RunService=game:GetService("RunService")
+		local frames,last=0,tick()
+		win._fpsConn=RunService.RenderStepped:Connect(function()
+			if not win._alive then return end
+			frames=frames+1
+			local n=tick()
+			if n-last>=1 then
+				win._fps=frames; frames=0; last=n
+				if win._fpsLabel and win._fpsLabel.SetValue then pcall(function() win._fpsLabel:SetValue(win._fps) end) end
+			end
+		end)
+	end)
 
 	-- ============================================================
 	-- Render / input loop
@@ -1380,7 +1411,7 @@ function MatchaUI:CreateWindow(config)
 			if (win._iCapture or win._kCapture) and iskeypressed then
 				local shiftDn = iskeypressed(0x10) or iskeypressed(0xA0) or iskeypressed(0xA1)
 				for _,vk in pairs(KV) do
-					if vk~=0x01 and vk~=0x02 and vk~=0x04 then
+					if vk~=0x01 then  -- allow RMB/MMB/side buttons as binds; LMB is used to click
 						local down = iskeypressed(vk)
 						if down then
 							local held = keyDown[vk] or 0
@@ -1462,14 +1493,9 @@ function MatchaUI:CreateWindow(config)
 		end
 	end)
 
-	-- UIS connection for keybind capture
-	win._uisConn = UIS.InputBegan:Connect(function(inp)
-		if not win._alive then return end
-		local vk = inpVK(inp)
-		if win._kCapture and vk and vk~=0 then
-			local fn=win._kCapture; win._kCapture=nil; pcall(fn,vk)
-		end
-	end)
+	-- (Keybind + input capture are handled by iskeypressed polling in the render
+	--  loop. UIS.InputBegan is intentionally NOT used: on some builds it reports
+	--  Roblox KeyCode values instead of Windows VK, which conflicted with polling.)
 
 	-- Scroll wheel (UIS.InputChanged is not guaranteed to exist in Matcha)
 	pcall(function()
