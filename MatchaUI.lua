@@ -134,6 +134,15 @@ for i=0x41,0x5A do VC[i]=string.char(i+32) end
 for i=0x30,0x39 do VC[i]=string.char(i) end
 VC[0x20]=" "; VC[0xBE]="."; VC[0xBC]=","; VC[0xBF]="/"; VC[0xBA]=";"; VC[0xBD]="-"; VC[0xBB]="="
 
+-- Matcha UIS.InputBegan gives KeyCode as a raw VK integer (no Enum.KeyCode).
+-- Handle both raw-int and Enum forms defensively.
+local function inpVK(inp)
+	local kc = inp.KeyCode
+	if type(kc)=="number" then return kc end
+	local ok,v = pcall(function() return kc and kc.Value end)
+	return ok and v or nil
+end
+
 -- ============================================================
 -- Config system
 -- ============================================================
@@ -789,7 +798,7 @@ function MatchaUI:CreateWindow(config)
 							ibg.Color=lighten(T2.Accent,.1); win._iCapture=el
 							win._iConn=UIS.InputBegan:Connect(function(inp)
 								if win._iCapture~=el then return end
-								local vk=inp.KeyCode and inp.KeyCode.Value
+								local vk=inpVK(inp)
 								if vk==0x0D or vk==0x1B then
 									ibg.Color=T2.Button; win._iCapture=nil
 									pcall(function()win._iConn:Disconnect()end); win._iConn=nil
@@ -951,23 +960,30 @@ function MatchaUI:CreateWindow(config)
 	-- UIS connection for keybind capture
 	win._uisConn = UIS.InputBegan:Connect(function(inp)
 		if not win._alive then return end
-		local vk = inp.KeyCode and inp.KeyCode.Value
+		local vk = inpVK(inp)
 		if win._kCapture and vk and vk~=0 then
 			local fn=win._kCapture; win._kCapture=nil; pcall(fn,vk)
 		end
 	end)
 
-	-- Scroll wheel
-	win._scrollConn = UIS.InputChanged:Connect(function(inp)
-		if not win._alive then return end
-		local ok,isWheel=pcall(function() return inp.UserInputType.Name=="MouseWheel" end)
-		if ok and isWheel then
-			local m=getMouse()
-			if m and m.X>=win.wx+C.SW and m.X<=win.wx+WW and m.Y>=win.wy+C.TH and m.Y<=win.wy+WH then
-				win._scrollY=clamp(win._scrollY-inp.Position.Z*25, 0, win._scrollMax)
-				if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
+	-- Scroll wheel (UIS.InputChanged is not guaranteed to exist in Matcha)
+	pcall(function()
+		if not UIS.InputChanged then return end
+		win._scrollConn = UIS.InputChanged:Connect(function(inp)
+			if not win._alive then return end
+			local ok,isWheel=pcall(function()
+				local t=inp.UserInputType
+				return (type(t)=="number" and t==3) or (t and t.Name=="MouseWheel")
+			end)
+			if ok and isWheel then
+				local m=getMouse()
+				if m and m.X>=win.wx+C.SW and m.X<=win.wx+WW and m.Y>=win.wy+C.TH and m.Y<=win.wy+WH then
+					local dz=0; pcall(function() dz=inp.Position.Z end)
+					win._scrollY=clamp(win._scrollY-dz*25, 0, win._scrollMax)
+					if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
+				end
 			end
-		end
+		end)
 	end)
 
 	return win
