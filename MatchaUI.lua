@@ -336,6 +336,9 @@ function MatchaUI:CreateWindow(config)
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,49))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,60,false))
+	-- tooltip (positioned dynamically at cursor)
+	local wTipBg = reg(sq(0,0,10,18, darken(T.Dialog,.25),4,95,false))
+	local wTipTx = reg(tx("",0,0, T.Text, C.FSM,FNT,96,false))
 	-- close & minimize
 	local cX,cY = win.wx+WW-28,win.wy+7
 	local mX,mY = win.wx+WW-52,win.wy+7
@@ -588,7 +591,8 @@ function MatchaUI:CreateWindow(config)
 			local sec={_title=stl, _elements={}, _collapsed=false}
 			tab._sections[#tab._sections+1]=sec
 
-			local function addEl(e)
+			local function addEl(e,c)
+				if c and type(c)=="table" and c.Tooltip then e.Tooltip=c.Tooltip end
 				if e._id then win._flags[e._id]=e; MatchaUI.Values[e._id]=e.Value end
 				sec._elements[#sec._elements+1]=e
 				return e
@@ -607,7 +611,7 @@ function MatchaUI:CreateWindow(config)
 					end
 					if not nc then pcall(self.Callback,v) end
 				end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Slider(c)
@@ -637,7 +641,7 @@ function MatchaUI:CreateWindow(config)
 					end
 					if not nc then pcall(self.Callback,v) end
 				end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Dropdown(c)
@@ -668,7 +672,7 @@ function MatchaUI:CreateWindow(config)
 					self.Items=r
 				end
 				function e:Select(v) if type(v)=="table" then v=v[1] end; self:Set(v) end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Button(c)
@@ -677,7 +681,7 @@ function MatchaUI:CreateWindow(config)
 					if self._bg then local oc=self._bg.Color; self._bg.Color=lighten(MatchaUI.Theme.Button,.4)
 						task.spawn(function() task.wait(.25); self._bg.Color=oc end) end
 				end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Keybind(c)
@@ -692,7 +696,7 @@ function MatchaUI:CreateWindow(config)
 					if self._ktx then self._ktx.Text="["..self.Value.."]" end
 					if not nc then pcall(self.Callback,self.Value) end
 				end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Input(c)
@@ -706,7 +710,7 @@ function MatchaUI:CreateWindow(config)
 					end
 					if not nc then pcall(self.Callback,self.Value) end
 				end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Colorpicker(c)
@@ -719,7 +723,7 @@ function MatchaUI:CreateWindow(config)
 					if not nc then pcall(self.Callback,v) end
 				end
 				function e:Update(v,tr) self:Set(v,false) end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Checkbox(c)
@@ -729,7 +733,7 @@ function MatchaUI:CreateWindow(config)
 					if self._tick then self._tick.Visible=v and (self._elemVis~=false) end
 					if not nc then pcall(self.Callback,v) end
 				end
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Label(c)
@@ -738,7 +742,7 @@ function MatchaUI:CreateWindow(config)
 				function e:SetValue(v) self.Value=tostring(v or ""); if self._vtx then self._vtx.Text=self.Value end
 					if self._id then MatchaUI.Values[self._id]=self.Value end end
 				e.Set=e.SetValue
-				return addEl(e)
+				return addEl(e,c)
 			end
 
 			function sec:Paragraph(c)
@@ -817,6 +821,7 @@ function MatchaUI:CreateWindow(config)
 					el._elemVis=show
 					local elH=C.EH
 					local lblx = (el.Icon and (C.P+22)) or C.P
+					local _thb0=#tab._thbs
 
 					if el.__type=="Toggle" and el._ctype=="Checkbox" then
 						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
@@ -1079,6 +1084,7 @@ function MatchaUI:CreateWindow(config)
 						local ic=im(el.Icon,0,0,isz,isz,56,show)
 						if ic then rcd(ic, C.P, ecy+(C.EH-isz)//2); local imm=M(ic); imm.own=show; imm.elemVis=show; table.insert(el._drawings, ic) end
 					end
+					if el.Tooltip then for hi=_thb0+1,#tab._thbs do if not tab._thbs[hi]._tip then tab._thbs[hi]._tip=el.Tooltip end end end
 					cy=cy+elH+2
 				end  -- elements
 				cy=cy+4
@@ -1199,6 +1205,27 @@ function MatchaUI:CreateWindow(config)
 				end
 				if sbDrag then pcall(function() win:_scrollTo(my, sbOff) end) end
 				if sldHb then pcall(sldHb.drag,mx) end
+			end
+
+			-- tooltip on hover (only when idle, not dragging/clicking)
+			local tip=nil
+			if not lnow and not drag and not sbDrag and not sldHb and not win._minimized and win._active then
+				for i=#win._active._thbs,1,-1 do
+					local h=win._active._thbs[i]
+					if h._tip and mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then tip=h._tip; break end
+				end
+			end
+			if tip then
+				local w=#tip*7+12
+				wTipTx.Text=tip
+				wTipBg.Size=Vector2.new(w,18)
+				local tx0=clamp(mx+14,0,(workspace.CurrentCamera.ViewportSize.X)-w)
+				local ty0=my+18
+				wTipBg.Position=Vector2.new(flr(tx0),flr(ty0))
+				wTipTx.Position=Vector2.new(flr(tx0)+6,flr(ty0)+3)
+				wTipBg.Visible=true; wTipTx.Visible=true
+			else
+				wTipBg.Visible=false; wTipTx.Visible=false
 			end
 
 			if fall then drag=false; sldHb=nil; sbDrag=false end
