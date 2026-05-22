@@ -161,9 +161,18 @@ local function imgData(src)
 	_imgCache[src] = data or false
 	return data
 end
--- Create a Drawing.Image. Prefers raw bytes (.Data); falls back to assigning
--- the rbxassetid string natively if the build resolves content itself.
+-- Validate that a byte string is actually an image (PNG/JPG/GIF/BMP/WEBP)
+local function looksImage(b)
+	if type(b)~="string" or #b<8 then return false end
+	return b:sub(1,4)=="\137PNG" or b:sub(1,2)=="\255\216" or b:sub(1,3)=="GIF"
+		or b:sub(1,2)=="BM" or b:sub(1,4)=="RIFF"
+end
+MatchaUI.IconsEnabled = true
+MatchaUI.ImageDataProp = nil  -- override the Drawing.Image property name if known
+-- Create a Drawing.Image. Uses validated raw bytes for URLs/files; for rbxassetids
+-- tries fetched bytes (validated) then the rbxassetid string natively.
 local function im(src,x,y,w,h,zi,vis)
+	if not MatchaUI.IconsEnabled then return nil end
 	if type(src)~="string" or src=="" then return nil end
 	local content, bytes
 	local id = src:match("^rbxassetid://(%d+)") or src:match("^rbxasset://(%d+)") or src:match("^(%d+)$")
@@ -178,6 +187,8 @@ local function im(src,x,y,w,h,zi,vis)
 		if _imgCache[key]==nil then _imgCache[key]=fetchAssetBytes(id) or false end
 		bytes = bytes or (_imgCache[key] or nil)
 	end
+	if bytes and not looksImage(bytes) then bytes=nil end  -- don't feed garbage to Drawing.Image
+	if not bytes and not content then return nil end
 	local d
 	local ok=pcall(function() d=Drawing.new("Image") end)
 	if not ok or not d then return nil end
@@ -186,12 +197,12 @@ local function im(src,x,y,w,h,zi,vis)
 	pcall(function() d.ZIndex=zi or 55 end)
 	pcall(function() d.Visible=vis~=false end)
 	local applied=false
+	local props = MatchaUI.ImageDataProp and {MatchaUI.ImageDataProp} or {"Data","Image","Bitmap","ImageData"}
 	if bytes then
-		for _,prop in ipairs({"Data","Image","Bitmap","ImageData"}) do
+		for _,prop in ipairs(props) do
 			if not applied then pcall(function() d[prop]=bytes; applied=true end) end
 		end
-	end
-	if not applied and content then
+	elseif content then
 		for _,prop in ipairs({"Image","Uri","Url","Asset","Content","Data"}) do
 			if not applied then pcall(function() d[prop]=content; applied=true end) end
 		end
@@ -238,7 +249,7 @@ end
 -- ============================================================
 -- VK table
 -- ============================================================
-local KV = {A=0x41,B=0x42,C=0x43,D=0x44,E=0x45,F=0x46,G=0x47,H=0x48,I=0x49,J=0x4A,K=0x4B,L=0x4C,M=0x4D,N=0x4E,O=0x4F,P=0x50,Q=0x51,R=0x52,S=0x53,T=0x54,U=0x55,V=0x56,W=0x57,X=0x58,Y=0x59,Z=0x5A,["0"]=0x30,["1"]=0x31,["2"]=0x32,["3"]=0x33,["4"]=0x34,["5"]=0x35,["6"]=0x36,["7"]=0x37,["8"]=0x38,["9"]=0x39,F1=0x70,F2=0x71,F3=0x72,F4=0x73,F5=0x74,F6=0x75,F7=0x76,F8=0x77,F9=0x78,F10=0x79,F11=0x7A,F12=0x7B,Space=0x20,Enter=0x0D,Escape=0x1B,Backspace=0x08,Tab=0x09,Shift=0x10,Ctrl=0x11,Alt=0x12,Delete=0x2E,Left=0x25,Up=0x26,Right=0x27,Down=0x28,LMB=0x01,RMB=0x02,MMB=0x04}
+local KV = {A=0x41,B=0x42,C=0x43,D=0x44,E=0x45,F=0x46,G=0x47,H=0x48,I=0x49,J=0x4A,K=0x4B,L=0x4C,M=0x4D,N=0x4E,O=0x4F,P=0x50,Q=0x51,R=0x52,S=0x53,T=0x54,U=0x55,V=0x56,W=0x57,X=0x58,Y=0x59,Z=0x5A,["0"]=0x30,["1"]=0x31,["2"]=0x32,["3"]=0x33,["4"]=0x34,["5"]=0x35,["6"]=0x36,["7"]=0x37,["8"]=0x38,["9"]=0x39,F1=0x70,F2=0x71,F3=0x72,F4=0x73,F5=0x74,F6=0x75,F7=0x76,F8=0x77,F9=0x78,F10=0x79,F11=0x7A,F12=0x7B,Space=0x20,Enter=0x0D,Escape=0x1B,Backspace=0x08,Tab=0x09,Shift=0x10,Ctrl=0x11,Alt=0x12,Delete=0x2E,Left=0x25,Up=0x26,Right=0x27,Down=0x28,LMB=0x01,RMB=0x02,MMB=0x04,Insert=0x2D,Home=0x24,End=0x23,PageUp=0x21,PageDown=0x22,LShift=0xA0,RShift=0xA1,LCtrl=0xA2,RCtrl=0xA3,LAlt=0xA4,RAlt=0xA5,CapsLock=0x14,["[`]"]=0xC0,Semicolon=0xBA,Comma=0xBC,Period=0xBE,Slash=0xBF}
 local VK = {}
 for k,v in pairs(KV) do VK[v]=k end
 -- VK → printable char for Input element
@@ -369,6 +380,8 @@ function MatchaUI:CreateWindow(config)
 		_all={}, _hbs={},   -- all drawings, all hitboxes
 		_flags={},          -- flag→elem registry
 		_keybinds={},       -- set of keybind elements to poll
+		_hidden=false,      -- whole-UI visibility
+		_toggleKey=(KV[config.ToggleKey] or KV["RShift"] or 0xA1),  -- menu show/hide key (VK)
 		_kCapture=nil,      -- keybind capture callback
 		_iCapture=nil,      -- input capture elem
 		_iConn=nil,         -- UIS connection for input
@@ -895,7 +908,7 @@ function MatchaUI:CreateWindow(config)
 					local show=tab._active and not sec._collapsed
 					el._elemVis=show
 					local elH=C.EH
-					local hasDesc = el.Desc~=nil and el.Desc~="" and el.__type~="Slider" and el.__type~="Paragraph"
+					local hasDesc = el.Desc~=nil and el.Desc~="" and el.__type~="Slider" and el.__type~="Paragraph" and el.__type~="Button"
 					if hasDesc then elH=46 end
 					local titleY = hasDesc and 6 or 9
 					local lblx = (el.Icon and (C.P+22)) or C.P
@@ -1222,6 +1235,48 @@ function MatchaUI:CreateWindow(config)
 	function win:SetTheme(name) MatchaUI.Theme=MatchaUI.Themes[name] or MatchaUI.Theme; win:_applyTheme() end
 	function win:SetAccent(color) if MatchaUI.Theme then MatchaUI.Theme.Accent=color end; win:_applyTheme() end
 
+	-- Whole-UI show/hide (toggle key)
+	function win:Hide()
+		win._hidden=true
+		for _,t in ipairs(win._tabs) do pcall(function() t:_closePopups() end) end
+		for _,d in ipairs(win._all) do pcall(function() d.Visible=false end) end
+	end
+	function win:Show()
+		win._hidden=false
+		for _,d in ipairs(win._all) do
+			local m=META[d]
+			if not (m and m.crx) then pcall(function() d.Visible=true end) end
+		end
+		pcall(function() wSbThumb.Visible=false end)
+		pcall(function() wTipBg.Visible=false; wTipTx.Visible=false end)
+		if win._active then pcall(function() win._active:_refreshContentPos() end) end
+		win:_updateScrollbar()
+	end
+	function win:Toggle() if win._hidden then win:Show() else win:Hide() end end
+	function win:SetToggleKey(k)
+		if type(k)=="string" then win._toggleKey=KV[k] or win._toggleKey
+		elseif type(k)=="number" then win._toggleKey=k end
+	end
+
+	-- Built-in Settings tab (library features)
+	function win:_addSettingsTab()
+		if win._settingsAdded then return end
+		win._settingsAdded=true
+		local curTheme="Dark"
+		for k,v in pairs(MatchaUI.Themes) do if v==MatchaUI.Theme then curTheme=k end end
+		local themeNames={}
+		for k in pairs(MatchaUI.Themes) do themeNames[#themeNames+1]=k end
+		table.sort(themeNames)
+		local t=win:Tab({Title="Settings", Icon="settings"})
+		local s=t:Section({Title="Interface"})
+		s:Dropdown({Title="Theme", Desc="UI color theme", Values=themeNames, Value=curTheme,
+			Callback=function(v) win:SetTheme(v) end})
+		s:Keybind({Title="Menu Toggle Key", Desc="Show / hide this menu", Value=(VK[win._toggleKey] or "RShift"),
+			Callback=function(k) win:SetToggleKey(k) end})
+		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
+		return t
+	end
+
 	-- Destroy
 	function win:Destroy()
 		win._alive=false
@@ -1243,17 +1298,29 @@ function MatchaUI:CreateWindow(config)
 	win.ConfigManager = buildCfgMgr(win)
 	MatchaUI._windows[#MatchaUI._windows+1] = win
 
+	-- Auto-add the built-in Settings tab after the user's tabs (deferred one frame)
+	if config.SettingsTab~=false then
+		task.spawn(function() task.wait(0.2); pcall(function() win:_addSettingsTab() end) end)
+	end
+
 	-- ============================================================
 	-- Render / input loop
 	-- ============================================================
 	task.spawn(function()
 		local lmb=false; local drag=false; local dox,doy=0,0; local sldHb=nil
 		local sbDrag=false; local sbOff=0
-		local keyDown={}; local frameN=0
+		local keyDown={}; local frameN=0; local tgState=false
 
 		while win._alive do
 			task.wait(0.033)
 			frameN=frameN+1
+			-- menu toggle key (show/hide whole UI)
+			if iskeypressed and win._toggleKey then
+				local td=iskeypressed(win._toggleKey)
+				if td and not tgState and not win._kCapture and not win._iCapture then pcall(function() win:Toggle() end) end
+				tgState=td
+			end
+			if win._hidden then lmb=ismouse1pressed(); continue end
 			local m=getMouse(); if not m then continue end
 			local mx,my=m.X,m.Y
 			local lnow=ismouse1pressed()
