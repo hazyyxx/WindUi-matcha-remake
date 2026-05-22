@@ -23,7 +23,7 @@ local C = {
 	FSM = 12,      -- font size small
 	FMD = 13,      -- font size medium
 	FLG = 14,      -- font size large
-	CRN = 4,       -- corner radius
+	CRN = 8,       -- corner radius
 }
 
 -- ============================================================
@@ -341,16 +341,17 @@ function MatchaUI:CreateWindow(config)
 	-- ---- window chrome ----
 	local wBrd  = reg(sq(win.wx-1,win.wy-1,WW+2,WH+2, darken(T.Background,.5), C.CRN+1,48))
 	local wBg   = reg(sq(win.wx,win.wy,WW,WH, T.Background, C.CRN,50))
-	local wBar  = reg(sq(win.wx,win.wy,WW,C.TH, T.Accent, C.CRN,51))
-	local wBarB = reg(sq(win.wx,win.wy+C.TH-4,WW,8, T.Accent,0,51))  -- cover rounded bottom of bar
+	local wBar  = reg(sq(win.wx,win.wy,WW,C.TH, T.Background, C.CRN,51))
+	local wBarB = reg(sq(win.wx,win.wy+C.TH-4,WW,8, T.Background,0,51))  -- cover rounded bottom of bar
+	local wTbSep = reg(sq(win.wx,win.wy+C.TH-1,WW,1, lighten(T.Background,.10),0,52))
 	local _titleX = C.P+2
 	if config.Icon then
 		local wIco = im(config.Icon, win.wx+C.P, win.wy+7, 18,18, 56, true)
 		if wIco then reg(wIco); local mi=M(wIco); mi.rx=C.P; mi.ry=7; _titleX = C.P+24 end
 	end
 	local wTtx  = reg(tx(win.Title, win.wx+_titleX,win.wy+9, T.Text, C.FLG,FNTB,55))
-	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, T.Dialog,0,50))
-	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, darken(T.Dialog,.35),1,52))
+	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, lighten(T.Background,.022),0,50))
+	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,49))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,60,false))
@@ -362,7 +363,7 @@ function MatchaUI:CreateWindow(config)
 	local mX,mY = win.wx+WW-52,win.wy+7
 	local wClBg = reg(sq(cX,cY,20,18,Color3.fromRGB(180,40,40),3,56))
 	local wClTx = reg(tx("x",cX+6,cY+2,Color3.fromRGB(255,255,255),C.FLG,FNTB,58))
-	local wMnBg = reg(sq(mX,mY,20,18,darken(T.Accent,.4),3,56))
+	local wMnBg = reg(sq(mX,mY,20,18,lighten(T.Background,.10),4,56))
 	local wMnTx = reg(tx("-",mX+7,mY+1,T.Text,C.FLG,FNTB,58))
 
 	-- ---- position refresh ----
@@ -372,8 +373,8 @@ function MatchaUI:CreateWindow(config)
 		local m=M(d); m.rx=rx; m.ry=ry
 		if rx2 then m.rx2=rx2; m.ry2=ry2 end
 	end
-	setRel(wBrd,-1,-1); setRel(wBg,0,0); setRel(wBar,0,0); setRel(wBarB,0,C.TH-4)
-	setRel(wTtx,C.P+2,9); setRel(wSide,0,C.TH); setRel(wSLn,C.SW,C.TH,C.SW,WH)
+	setRel(wBrd,-1,-1); setRel(wBg,0,0); setRel(wBar,0,0); setRel(wBarB,0,C.TH-4); setRel(wTbSep,0,C.TH-1)
+	setRel(wTtx,_titleX,9); setRel(wSide,0,C.TH); setRel(wSLn,C.SW,C.TH,C.SW,WH)
 	setRel(wCont,C.SW+1,C.TH); setRel(wClBg,WW-28,7); setRel(wClTx,WW-23,9)
 	setRel(wMnBg,WW-52,7); setRel(wMnTx,WW-48,10)
 
@@ -461,7 +462,7 @@ function MatchaUI:CreateWindow(config)
 		local T2=MatchaUI.Theme
 		local by=tabBtnY(idx)
 		local relY=(idx-1)*(C.TBH+2)+C.TH+C.TBP
-		local btn=reg(sq(win.wx+C.TBP,by,C.SW-C.TBP*2,C.TBH, T2.Dialog,3,52))
+		local btn=reg(sq(win.wx+C.TBP,by,C.SW-C.TBP*2,C.TBH, lighten(T2.Background,.022),6,52))
 		setRel(btn,C.TBP,relY)
 		local txX=C.P+6; local ico
 		if icon then
@@ -525,7 +526,7 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_deactivate()
 			tab._active=false
-			tab._btn.Color=MatchaUI.Theme.Dialog
+			tab._btn.Color=lighten(MatchaUI.Theme.Background,.022)
 			tab._btx.Color=MatchaUI.Theme.Placeholder
 			tab:_closePopups()
 			tab:_setAllVis(false)
@@ -533,7 +534,7 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_activate()
 			tab._active=true
-			tab._btn.Color=lighten(MatchaUI.Theme.Accent,.2)
+			tab._btn.Color=lighten(MatchaUI.Theme.Background,.10)
 			tab._btx.Color=MatchaUI.Theme.Text
 			tab:_setAllVis(true)
 		end
@@ -571,7 +572,12 @@ function MatchaUI:CreateWindow(config)
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 					end
 					if m.own then
-						d.Visible = tab._active and m.elemVis~=false and (ay>=clipT and ay<clipB)
+						if m.rowTop then
+							local rt=oy+m.rowTop-sy
+							d.Visible = tab._active and m.elemVis~=false and rt>=clipT-1 and (rt+(m.rowH or 0))<=clipB+2
+						else
+							d.Visible = tab._active and m.elemVis~=false and (ay>=clipT and ay<clipB)
+						end
 					end
 				end
 			end
@@ -811,9 +817,10 @@ function MatchaUI:CreateWindow(config)
 			for _,sec in ipairs(tab._sections) do
 				-- Section header
 				if sec._title ~= "" then
-					local shBg  = rcd(sq(0,0,ew,C.SH,darken(T2.Accent,.15),3,51,tab._active), 0,cy)
+					local shBg  = rcd(sq(0,0,ew,C.SH,lighten(T2.Background,.03),6,51,tab._active), 0,cy)
 					local shTx  = rcd(tx(sec._title,0,0,T2.Text,C.FSM,FNTB,55,tab._active), C.P,cy+6)
 					local shArr = rcd(tx(sec._collapsed and "+" or "-",0,0,T2.Placeholder,C.FSM,FNT,55,tab._active), ew-18,cy+6)
+					for _,_d in ipairs({shBg,shTx,shArr}) do local _m=M(_d); _m.rowTop=cy; _m.rowH=C.SH end
 					-- collapse hitbox
 					local scy=cy
 					local shrH=chb(0,scy,ew,scy+C.SH, function()
@@ -828,7 +835,7 @@ function MatchaUI:CreateWindow(config)
 							end
 						end
 					end)
-					cy=cy+C.SH+2
+					cy=cy+C.SH+8
 					-- suppress unused refs
 				end
 
@@ -842,7 +849,7 @@ function MatchaUI:CreateWindow(config)
 					local _thb0=#tab._thbs
 
 					if el.__type=="Toggle" and el._ctype=="Checkbox" then
-						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local bs=18; local bx=ew-bs-C.P; local by=ecy+(C.EH-bs)//2
 						local box  = rcd(sq(0,0,bs,bs,el.Value and T2.Toggle or T2.Button,4,53,show), bx,by)
@@ -853,7 +860,7 @@ function MatchaUI:CreateWindow(config)
 						chb(0,ecy,ew,ecy+C.EH, function() el:Set(not el.Value) end)
 
 					elseif el.__type=="Toggle" then
-						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local tw=C.TOW; local th=C.TOH
 						local trkX=ew-tw-C.P; local trkY=ecy+8
@@ -868,7 +875,7 @@ function MatchaUI:CreateWindow(config)
 						end)
 
 					elseif el.__type=="Slider" then
-						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+6)
 						local tw  = flr(ew*C.TWP)
 						local tkX = ew-tw-C.P; local tkY=ecy+14; local tkH=5
@@ -893,7 +900,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Button" then
 						local bh=C.EH-6
-						local bg = rcd(sq(0,0,ew,bh,T2.Button,4,51,show), 0,ecy+3)
+						local bg = rcd(sq(0,0,ew,bh,T2.Button,6,51,show), 0,ecy+3)
 						local cw = math.min(#el.Title*7,ew-16)
 						local lbl= rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,55,show), flr((ew-cw)/2),ecy+3+flr((bh-C.FMD)/2))
 						setOwn({bg,lbl}, show)
@@ -905,7 +912,7 @@ function MatchaUI:CreateWindow(config)
 						end)
 
 					elseif el.__type=="Dropdown" then
-						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local stx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-92,ecy+9)
 						local arr = rcd(tx("v",0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-18,ecy+10)
@@ -951,7 +958,7 @@ function MatchaUI:CreateWindow(config)
 						end)
 
 					elseif el.__type=="Keybind" then
-						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local kbg = rcd(sq(0,0,62,18,T2.Button,3,52,show), ew-70,ecy+7)
 						local ktx = rcd(tx("["..el.Value.."]",0,0,T2.Text,C.FSM,FNT,55,show), ew-66,ecy+9)
@@ -967,7 +974,7 @@ function MatchaUI:CreateWindow(config)
 						end)
 
 					elseif el.__type=="Input" then
-						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local ibg = rcd(sq(0,0,126,20,T2.Button,3,52,show), ew-134,ecy+6)
 						local dt  = #el.Value>0 and el.Value or el.Placeholder
@@ -984,7 +991,7 @@ function MatchaUI:CreateWindow(config)
 						end)
 
 					elseif el.__type=="Colorpicker" then
-						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local pbrd = rcd(sq(0,0,32,20,T2.Placeholder,3,52,show), ew-39,ecy+6)
 						local prev = rcd(sq(0,0,28,16,el.Value,3,53,show), ew-37,ecy+8)
@@ -1054,7 +1061,7 @@ function MatchaUI:CreateWindow(config)
 						end)
 
 					elseif el.__type=="Label" then
-						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local vtx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-150,ecy+9)
 						setOwn({bg,lbl,vtx}, show)
@@ -1062,7 +1069,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Paragraph" then
 						elH=44
-						local bg  = rcd(sq(0,0,ew,elH,T2.Element,3,50,show), 0,ecy)
+						local bg  = rcd(sq(0,0,ew,elH,T2.Element,6,50,show), 0,ecy)
 						local ttx = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNTB,54,show), lblx,ecy+6)
 						local dtx = rcd(tx(el.Desc,0,0,T2.Placeholder,C.FSM,FNT,54,show), C.P,ecy+24)
 						setOwn({bg,ttx,dtx}, show)
@@ -1088,7 +1095,8 @@ function MatchaUI:CreateWindow(config)
 						if ic then rcd(ic, C.P, ecy+(C.EH-isz)//2); local imm=M(ic); imm.own=show; imm.elemVis=show; table.insert(el._drawings, ic) end
 					end
 					if el.Tooltip then for hi=_thb0+1,#tab._thbs do if not tab._thbs[hi]._tip then tab._thbs[hi]._tip=el.Tooltip end end end
-					cy=cy+elH+2
+					for _,_d in ipairs(el._drawings or {}) do local _m=M(_d); _m.rowTop=ecy; _m.rowH=elH end
+					cy=cy+elH+7
 				end  -- elements
 				cy=cy+4
 			end  -- sections
@@ -1103,7 +1111,7 @@ function MatchaUI:CreateWindow(config)
 		-- First tab auto-activates and builds
 		if idx==1 then
 			win._active=tab; tab._active=true
-			tab._btn.Color=lighten(T.Accent,.2); tab._btx.Color=T.Text
+			tab._btn.Color=lighten(T.Background,.10); tab._btx.Color=T.Text
 			task.spawn(function() task.wait(); tab:_build() end)
 		end
 
@@ -1136,8 +1144,8 @@ function MatchaUI:CreateWindow(config)
 			wSbThumb.Color=lighten(T2.Dialog,.25); wTipBg.Color=darken(T2.Dialog,.25); wTipTx.Color=T2.Text
 		end)
 		for _,t in ipairs(win._tabs) do
-			if t._active then pcall(function() t._btn.Color=lighten(T2.Accent,.2); t._btx.Color=T2.Text end)
-			else pcall(function() t._btn.Color=T2.Dialog; t._btx.Color=T2.Placeholder end) end
+			if t._active then pcall(function() t._btn.Color=lighten(T2.Background,.10); t._btx.Color=T2.Text end)
+			else pcall(function() t._btn.Color=lighten(T2.Background,.022); t._btx.Color=T2.Placeholder end) end
 		end
 		-- rebuild content drawings (they carry baked-in colors)
 		local contentSet={}
