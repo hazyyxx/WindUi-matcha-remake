@@ -112,6 +112,14 @@ end
 local function clamp(v,a,b) return math.max(a,math.min(b,v)) end
 local function flr(x) return math.floor(x+.5) end
 
+-- Status text/color from a value (true/"working", false/"broken", "dev"/"indev")
+local function statusInfo(v)
+	local s = type(v)=="string" and v:lower() or v
+	if v==true or s=="working" or s=="ok" or s=="up" then return "Working", Color3.fromRGB(80,220,120) end
+	if s=="dev" or s=="indev" or s=="in dev" or s=="wip" or s=="beta" then return "In Dev", Color3.fromRGB(235,200,70) end
+	return "Broken", Color3.fromRGB(235,80,80)
+end
+
 -- ============================================================
 -- Image / icon support (Drawing.Image)
 -- Accepts: rbxassetid://ID, bare numeric id, http(s) URL, local file path,
@@ -136,6 +144,9 @@ end
 --   then Icon="house" -> that base .. "house" .. IconExt (default ".png")
 MatchaUI.IconBaseUrl = nil
 MatchaUI.IconExt = ".png"
+-- Remote game-status JSON (edit this file in your own repo to control statuses).
+-- Format: { "Blade Ball": "working", "Fallen Survival": "dev", "Old Game": false }
+MatchaUI.StatusSource = "https://raw.githubusercontent.com/hazyyxx/WindUi-matcha-remake/main/status.json"
 local function resolveIcon(name)
 	local setName,iconName = name:match("^([%w_]+):(.+)$")
 	if not iconName then iconName = name end
@@ -850,6 +861,40 @@ function MatchaUI:CreateWindow(config)
 				return e
 			end
 
+			function sec:Status(c)
+				local e={__type="Status",Title=c.Title or "Status",Value=c.Status,_drawings={},_elemVis=true}
+				function e:SetStatus(s) self.Value=s
+					if self._stx then local t,col=statusInfo(s); self._stx.Text=t; self._stx.Color=col end
+				end
+				return addEl(e,c)
+			end
+
+			function sec:StatusList(c)
+				c=c or {}
+				local items=c.Items
+				if not items then
+					local url=c.Source or MatchaUI.StatusSource
+					if url then pcall(function() items=HttpService:JSONDecode(game:HttpGet(url)) end) end
+				end
+				if type(items)~="table" then return end
+				if items.games and type(items.games)=="table" then items=items.games end
+				-- map -> sorted name list
+				local names={}
+				for k in pairs(items) do names[#names+1]=k end
+				table.sort(names)
+				for _,name in ipairs(names) do sec:Status({Title=name, Status=items[name]}) end
+			end
+
+			-- One consolidated multi-line box (used for the live debug/info panel)
+			function sec:InfoBox(c)
+				c=c or {}
+				local e={__type="InfoBox",Title=c.Title or "",Lines=c.Lines or {},_drawings={},_lineTx={},_elemVis=true}
+				function e:SetLine(i,t) self.Lines[i]=t; if self._lineTx[i] then self._lineTx[i].Text=tostring(t or "") end end
+				function e:SetLines(l) for i=1,#self._lineTx do self:SetLine(i, l[i] or "") end end
+				sec._elements[#sec._elements+1]=e
+				return e
+			end
+
 			function sec:Space() sec._elements[#sec._elements+1]={__type="Space",_drawings={},_elemVis=true} end
 
 			function sec:Text(c)
@@ -1154,6 +1199,28 @@ function MatchaUI:CreateWindow(config)
 						setOwn({bg,ttx,dtx}, show)
 						el._drawings={bg,ttx,dtx}; el._ttx=ttx; el._dtx=dtx
 
+					elseif el.__type=="Status" then
+						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
+						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local stt,scol = statusInfo(el.Value)
+						local stx = rcd(tx(stt,0,0,scol,C.FSM,FNTB,54,show), ew-78,ecy+9)
+						setOwn({bg,lbl,stx}, show)
+						el._drawings={bg,lbl,stx}; el._stx=stx
+					elseif el.__type=="InfoBox" then
+						local n=#el.Lines
+						local titleH=(el.Title~="" and 22 or 4)
+						elH=titleH+n*16+8
+						local bg=rcd(sq(0,0,ew,elH,T2.Element,6,50,show), 0,ecy)
+						local list={bg}
+						local yy=ecy+6
+						if el.Title~="" then local tt=rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNTB,54,show), C.P,yy); list[#list+1]=tt; yy=yy+titleH end
+						el._lineTx={}
+						for i=1,n do
+							local lt=rcd(tx(tostring(el.Lines[i] or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), C.P,yy)
+							el._lineTx[i]=lt; list[#list+1]=lt; yy=yy+16
+						end
+						setOwn(list, show)
+						el._drawings=list
 					elseif el.__type=="Space" then
 						local sln=rcd(ln(0,0,0,0,darken(T2.Button,.3),1,51,show), 4,ecy+5)
 						local sm=M(sln); sm.crx2=ew-4; sm.cry2=ecy+5; sm.own=show; sm.elemVis=show
@@ -1271,6 +1338,26 @@ function MatchaUI:CreateWindow(config)
 		elseif type(k)=="number" then win._toggleKey=k end
 	end
 
+	-- Resize the window (rebuilds content at the new width/height)
+	function win:Resize(w,h)
+		WW=math.max(360,flr(w or WW)); WH=math.max(220,flr(h or WH))
+		win.ww=WW; win.wh=WH
+		pcall(function()
+			local vp=workspace.CurrentCamera.ViewportSize
+			win.wx=clamp(win.wx,0,math.max(0,vp.X-WW)); win.wy=clamp(win.wy,0,math.max(0,vp.Y-WH))
+		end)
+		pcall(function()
+			wBrd.Size=Vector2.new(WW+2,WH+2); wBg.Size=Vector2.new(WW,WH)
+			wBar.Size=Vector2.new(WW,C.TH); wBarB.Size=Vector2.new(WW,8); wTbSep.Size=Vector2.new(WW,1)
+			wSide.Size=Vector2.new(C.SW,WH-C.TH); wCont.Size=Vector2.new(WW-C.SW-1,WH-C.TH)
+		end)
+		local ml=M(wSLn); ml.ry2=WH
+		M(wClBg).rx=WW-28; M(wClTx).rx=WW-23; M(wMnBg).rx=WW-52; M(wMnTx).rx=WW-48
+		closeHb._dRx=WW-28; minHb._dRx=WW-52
+		refreshChrome(); refreshChromeHbs()
+		win:_applyTheme()
+	end
+
 	-- Built-in Settings tab (library features)
 	function win:_addSettingsTab()
 		if win._settingsAdded then return end
@@ -1284,39 +1371,48 @@ function MatchaUI:CreateWindow(config)
 		local s=t:Section({Title="Interface"})
 		s:Dropdown({Title="Theme", Desc="UI color theme", Values=themeNames, Value=curTheme,
 			Callback=function(v) win:SetTheme(v) end})
+		local sizeMap={["Small"]={480,360},["Default"]={560,420},["Large"]={680,520},["Huge"]={820,600}}
+		s:Dropdown({Title="Window Size", Desc="Resize the menu", Values={"Small","Default","Large","Huge"}, Value="Default",
+			Callback=function(v) local sz=sizeMap[v]; if sz then win:Resize(sz[1],sz[2]) end end})
 		s:Keybind({Title="Menu Toggle Key", Desc="Show / hide this menu", Value=(VK[win._toggleKey] or "RShift"),
 			Callback=function(k) win:SetToggleKey(k) end})
 		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
 
-		-- Live client info panel
-		local s2=t:Section({Title="Client Info"})
-		win._infoLabels = {}
-		local function infoLbl(key,title) local l=s2:Label({Title=title, Value="--"}); win._infoLabels[key]=l; return l end
-		infoLbl("User","User"); infoLbl("Game","Game"); infoLbl("Ping","Ping")
-		win._fpsLabel = infoLbl("FPS","FPS")
-		infoLbl("Uptime","Uptime"); infoLbl("Focused","Focused"); infoLbl("Health","Health"); infoLbl("Camera","Camera")
+		-- Live client info (one consolidated box)
+		local s2=t:Section({Title="Debug Info"})
+		win._infoBox = s2:InfoBox({ Title="Client", Lines={"","","","","","","",""} })
+
+		-- Game status list (driven by remote JSON; edit your status.json to change)
+		local ss=t:Section({Title="Supported Games"})
+		pcall(function() ss:StatusList({}) end)
 
 		local s3=t:Section({Title="Library"})
-		s3:Label({Title="Version", Value="MatchaUI v"..tostring(MatchaUI.Version)})
-		s3:Paragraph({Title="MatchaUI", Desc="Drawing-based WindUI-style interface for Matcha."})
+		s3:Paragraph({Title="MatchaUI v"..tostring(MatchaUI.Version), Desc="Drawing-based WindUI-style interface for Matcha."})
 
-		-- update info each second
+		-- update the info box each second
 		win._startTime = win._startTime or tick()
 		task.spawn(function()
 			local gameName
 			pcall(function() gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name end)
 			local LP = Players.LocalPlayer
-			while win._alive and win._infoLabels do
-				local L=win._infoLabels
-				local function set(k,v) local e=L[k]; if e and e.SetValue then pcall(function() e:SetValue(v) end) end end
-				set("User", (LP and (LP.DisplayName or LP.Name)) or "?")
-				set("Game", gameName or tostring(game.PlaceId))
-				pcall(function() set("Ping", math.floor(LP:GetNetworkPing()*1000+.5).." ms") end)
-				set("FPS", tostring(win._fps or 0))
-				local up=math.floor(tick()-win._startTime); set("Uptime", string.format("%02d:%02d", up//60, up%60))
-				local foc=true; pcall(function() if isrbxactive then foc=isrbxactive() end end); set("Focused", foc and "Yes" or "No")
-				pcall(function() local h=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid"); if h then set("Health", string.format("%d / %d", math.floor(h.Health), math.floor(h.MaxHealth))) end end)
-				pcall(function() local p=workspace.CurrentCamera.CFrame.Position; set("Camera", string.format("%d, %d, %d", p.X, p.Y, p.Z)) end)
+			while win._alive and win._infoBox do
+				local box=win._infoBox
+				local function ping() local p="--"; pcall(function() p=math.floor(LP:GetNetworkPing()*1000+.5).." ms" end); return p end
+				local function hp() local v="--"; pcall(function() local h=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid"); if h then v=string.format("%d / %d", math.floor(h.Health), math.floor(h.MaxHealth)) end end); return v end
+				local function cam() local v="--"; pcall(function() local p=workspace.CurrentCamera.CFrame.Position; v=string.format("%d, %d, %d", p.X, p.Y, p.Z) end); return v end
+				local foc="--"; pcall(function() if isrbxactive then foc=isrbxactive() and "Yes" or "No" end end)
+				local up=math.floor(tick()-win._startTime)
+				win._fps=win._fps or 0
+				pcall(function() box:SetLines({
+					"User: "..((LP and (LP.DisplayName or LP.Name)) or "?"),
+					"Game: "..(gameName or tostring(game.PlaceId)),
+					"Ping: "..ping(),
+					"FPS: "..tostring(win._fps),
+					"Uptime: "..string.format("%02d:%02d", up//60, up%60),
+					"Focused: "..foc,
+					"Health: "..hp(),
+					"Camera: "..cam(),
+				}) end)
 				task.wait(1)
 			end
 		end)
