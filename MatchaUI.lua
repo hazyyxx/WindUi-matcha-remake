@@ -1378,18 +1378,40 @@ function MatchaUI:CreateWindow(config)
 			Callback=function(k) win:SetToggleKey(k) end})
 		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
 
-		-- Live client info (one consolidated box)
-		local s2=t:Section({Title="Debug Info"})
-		win._infoBox = s2:InfoBox({ Title="Client", Lines={"","","","","","","",""} })
-
-		-- Game status list (driven by remote JSON; edit your status.json to change)
-		local ss=t:Section({Title="Supported Games"})
-		pcall(function() ss:StatusList({}) end)
+		-- Configuration (save / load element states)
+		local sc=t:Section({Title="Configuration"})
+		local nameInput = sc:Input({Title="Config Name", Placeholder="default", Value="default"})
+		sc:Button({Title="Save Config", Desc="Save current settings to file", Callback=function()
+			local nm=(nameInput.Value~="" and nameInput.Value) or "default"
+			local ok=false; pcall(function() ok=win.ConfigManager:Config(nm):Save() end)
+			UI:Notify({Title="Config", Content=(ok and "Saved '"..nm.."'" or "Save failed"), Duration=3})
+		end})
+		sc:Button({Title="Load Config", Desc="Load settings from file", Callback=function()
+			local nm=(nameInput.Value~="" and nameInput.Value) or "default"
+			pcall(function() win.ConfigManager:Config(nm):Load() end)
+			UI:Notify({Title="Config", Content="Loaded '"..nm.."'", Duration=3})
+		end})
+		local cfgs={}; pcall(function() cfgs=win.ConfigManager:AllConfigs() end)
+		if #cfgs>0 then
+			sc:Dropdown({Title="Existing Configs", Values=cfgs, Value=cfgs[1], Callback=function(v)
+				if nameInput.Set then nameInput:Set(v) end
+			end})
+		end
 
 		local s3=t:Section({Title="Library"})
 		s3:Paragraph({Title="MatchaUI v"..tostring(MatchaUI.Version), Desc="Drawing-based WindUI-style interface for Matcha."})
+		return t
+	end
 
-		-- update the info box each second
+	-- Built-in Home tab (landing screen: live debug info + game status)
+	function win:_addHomeTab()
+		if win._homeAdded then return end
+		win._homeAdded=true
+		local t=win:Tab({Title="Home", Icon="home"})
+		local s2=t:Section({Title="Debug Info"})
+		win._infoBox = s2:InfoBox({ Title="Client", Lines={"","","","","","","",""} })
+		local ss=t:Section({Title="Supported Games"})
+		pcall(function() ss:StatusList({}) end)
 		win._startTime = win._startTime or tick()
 		task.spawn(function()
 			local gameName
@@ -1440,6 +1462,11 @@ function MatchaUI:CreateWindow(config)
 
 	win.ConfigManager = buildCfgMgr(win)
 	MatchaUI._windows[#MatchaUI._windows+1] = win
+
+	-- Built-in Home tab first (landing screen), so it becomes tab #1
+	if config.HomeTab~=false then
+		pcall(function() win:_addHomeTab() end)
+	end
 
 	-- Auto-add the built-in Settings tab after the user's tabs (deferred one frame)
 	if config.SettingsTab~=false then
