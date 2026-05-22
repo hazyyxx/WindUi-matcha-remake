@@ -324,6 +324,7 @@ function MatchaUI:CreateWindow(config)
 		_scrollY=0, _scrollMax=0,
 		_all={}, _hbs={},   -- all drawings, all hitboxes
 		_flags={},          -- flag→elem registry
+		_keybinds={},       -- set of keybind elements to poll
 		_kCapture=nil,      -- keybind capture callback
 		_iCapture=nil,      -- input capture elem
 		_iConn=nil,         -- UIS connection for input
@@ -919,7 +920,8 @@ function MatchaUI:CreateWindow(config)
 							for i=#tab._thbs,1,-1 do if tab._thbs[i]._pop then table.remove(tab._thbs,i) end end
 						end
 
-						local ddHb=chb(0,ecy,ew,ecy+C.EH, function()
+						local ddHb
+						ddHb=chb(0,ecy,ew,ecy+C.EH, function()
 							if el._popupDs then closePopup(); return end
 							el._popupDs={}
 							local maxS=math.min(#el.Items,7)
@@ -955,10 +957,11 @@ function MatchaUI:CreateWindow(config)
 						local ktx = rcd(tx("["..el.Value.."]",0,0,T2.Text,C.FSM,FNT,55,show), ew-66,ecy+9)
 						setOwn({bg,lbl,kbg,ktx}, show)
 						el._drawings={bg,lbl,kbg,ktx}; el._ktx=ktx; el._kbg=kbg
+						win._keybinds[el]=true
 						chb(ew-70,ecy+7,ew-8,ecy+25, function()
 							kbg.Color=lighten(T2.Accent,.2); ktx.Text="[...]"
 							win._kCapture=function(vk)
-								kbg.Color=T2.Button; el:Set(vk)
+								pcall(function() kbg.Color=T2.Button end); el:Set(vk)
 								win._kCapture=nil
 							end
 						end)
@@ -991,7 +994,8 @@ function MatchaUI:CreateWindow(config)
 							if el._popupDs then for _,d in ipairs(el._popupDs) do pcall(function()d:Remove()end) end; el._popupDs=nil end
 							for i=#tab._thbs,1,-1 do if tab._thbs[i]._pop then table.remove(tab._thbs,i) end end
 						end
-						local cpHb=chb(0,ecy,ew,ecy+C.EH, function()
+						local cpHb
+						cpHb=chb(0,ecy,ew,ecy+C.EH, function()
 							if el._popupDs then closeCP(); return end
 							el._popupDs={}
 							local ds=el._popupDs
@@ -1279,6 +1283,18 @@ function MatchaUI:CreateWindow(config)
 					end
 				end
 			elseif next(keyDown) then keyDown={} end
+
+			-- keybind activation: fire callback when a bound key is pressed (edge)
+			if iskeypressed and not win._kCapture then
+				for el in pairs(win._keybinds) do
+					local vk=el._vk
+					if vk and vk~=0 then
+						local down=iskeypressed(vk)
+						if down and not el._kdown then pcall(el.Callback, el.Value) end
+						el._kdown=down
+					end
+				end
+			end
 
 			-- input cursor blink + live text
 			if win._iCapture and win._iCapture._itx then
