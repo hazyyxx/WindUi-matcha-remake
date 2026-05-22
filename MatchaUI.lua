@@ -989,4 +989,12 @@ end
 -- Gradient stub (WindUI compatibility — returns nil gracefully)
 function MatchaUI:Gradient() return nil end
 
+-- Matcha's loadstring return value is non-standard, so also expose the
+-- library as a global. Loaders can grab it via getgenv().MatchaUI / _G.MatchaUI
+-- if `loadstring(game:HttpGet(...))()` does not propagate the return value.
+pcall(function()
+	local g = (getgenv and getgenv()) or _G
+	if g then g.MatchaUI = MatchaUI end
+end)
+
 return MatchaUI
