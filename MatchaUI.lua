@@ -239,6 +239,7 @@ function MatchaUI:CreateWindow(config)
 	config = config or {}
 	if config.Theme then self:SetTheme(config.Theme) end
 	local T = self.Theme
+	self._windows = self._windows or {}
 
 	local vp = workspace.CurrentCamera.ViewportSize
 	local WW = (config.Size and config.Size.X) or C.WW
@@ -891,9 +892,11 @@ function MatchaUI:CreateWindow(config)
 			end
 		end
 		for _,d in ipairs(win._all) do pcall(function()d:Remove()end) end
+		for i=#MatchaUI._windows,1,-1 do if MatchaUI._windows[i]==win then table.remove(MatchaUI._windows,i) end end
 	end
 
 	win.ConfigManager = buildCfgMgr(win)
+	MatchaUI._windows[#MatchaUI._windows+1] = win
 
 	-- ============================================================
 	-- Render / input loop
@@ -1005,12 +1008,23 @@ end
 -- Gradient stub (WindUI compatibility — returns nil gracefully)
 function MatchaUI:Gradient() return nil end
 
+function MatchaUI:DestroyAll()
+	for _,w in ipairs(self._windows or {}) do pcall(function() w:Destroy() end) end
+	self._windows = {}
+end
+
 -- Matcha's loadstring return value is non-standard, so also expose the
 -- library as a global. Loaders can grab it via getgenv().MatchaUI / _G.MatchaUI
 -- if `loadstring(game:HttpGet(...))()` does not propagate the return value.
+-- On reload, tear down the previous instance's windows so they don't stack.
 pcall(function()
 	local g = (getgenv and getgenv()) or _G
-	if g then g.MatchaUI = MatchaUI end
+	if g then
+		if g.MatchaUI and g.MatchaUI ~= MatchaUI and g.MatchaUI.DestroyAll then
+			pcall(function() g.MatchaUI:DestroyAll() end)
+		end
+		g.MatchaUI = MatchaUI
+	end
 end)
 
 return MatchaUI
