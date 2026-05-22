@@ -41,9 +41,18 @@ local function getMouse()
 	return _mouse
 end
 
--- Fonts (with safe fallbacks)
-local FNT, FNTB = Drawing.Fonts.System, Drawing.Fonts.System
-pcall(function() FNTB = Drawing.Fonts.SystemBold end)
+-- Fonts (7 available in Matcha, with safe fallbacks)
+local function _font(name)
+	local f; pcall(function() f = Drawing.Fonts[name] end); return f
+end
+MatchaUI.Fonts = {}
+for _,n in ipairs({"UI","System","SystemBold","Minecraft","Monospace","Pixel","Fortnite"}) do
+	MatchaUI.Fonts[n] = _font(n)
+end
+local FNT  = MatchaUI.Fonts.System or MatchaUI.Fonts.UI or 0
+local FNTB = MatchaUI.Fonts.SystemBold or FNT
+function MatchaUI:SetFont(name) local f=self.Fonts[name]; if f~=nil then FNT=f end end
+function MatchaUI:SetBoldFont(name) local f=self.Fonts[name]; if f~=nil then FNTB=f end end
 
 -- ============================================================
 -- Drawing helpers
@@ -301,9 +310,11 @@ function MatchaUI:CreateWindow(config)
 		for _,d in ipairs(win._all) do
 			local m=META[d]
 			if m and m.rx then
-				d.Position = Vector2.new(flr(win.wx+m.rx+.5),flr(win.wy+m.ry+.5))
-				if m.rx2 then
-					d.To = Vector2.new(flr(win.wx+m.rx2+.5),flr(win.wy+m.ry2+.5))
+				if m.rx2 then  -- Line: use From/To, never Position
+					d.From = Vector2.new(flr(win.wx+m.rx+.5),flr(win.wy+m.ry+.5))
+					d.To   = Vector2.new(flr(win.wx+m.rx2+.5),flr(win.wy+m.ry2+.5))
+				else
+					d.Position = Vector2.new(flr(win.wx+m.rx+.5),flr(win.wy+m.ry+.5))
 				end
 			end
 		end
@@ -322,6 +333,10 @@ function MatchaUI:CreateWindow(config)
 		wBg.Size   = show and Vector2.new(WW,WH) or Vector2.new(WW,C.TH)
 		wBrd.Size  = show and Vector2.new(WW+2,WH+2) or Vector2.new(WW+2,C.TH+2)
 		wSide.Visible=show; wSLn.Visible=show; wCont.Visible=show
+		for _,t in ipairs(win._tabs) do
+			if t._btn then t._btn.Visible=show end
+			if t._btx then t._btx.Visible=show end
+		end
 		if win._active then win._active:_setAllVis(show) end
 	end)
 	minHb._chrome=true; minHb._dRx=WW-52; minHb._dRy=7; minHb._dW=20; minHb._dH=18
@@ -429,9 +444,11 @@ function MatchaUI:CreateWindow(config)
 				if m and m.crx ~= nil then
 					local ax=ox+C.P+m.crx
 					local ay=oy+m.cry-sy
-					d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-					if m.crx2~=nil then  -- line To
+					if m.crx2~=nil then  -- Line: use From/To, never Position
+						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
+					else
+						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 					end
 					if m.own then
 						d.Visible = tab._active and m.elemVis~=false and (ay>=clipT and ay<clipB)
@@ -606,6 +623,34 @@ function MatchaUI:CreateWindow(config)
 				return addEl(e)
 			end
 
+			function sec:Checkbox(c)
+				local e={__type="Toggle",_ctype="Checkbox",_id=c.Flag or c.Title,Title=c.Title or "Checkbox",Value=c.Value or false,Callback=c.Callback or function()end,_drawings={},_elemVis=true}
+				function e:Set(v,nc) self.Value=v; if self._id then MatchaUI.Values[self._id]=v end
+					if self._box then self._box.Color=v and MatchaUI.Theme.Toggle or MatchaUI.Theme.Button end
+					if self._tick then self._tick.Visible=v and (self._elemVis~=false) end
+					if not nc then pcall(self.Callback,v) end
+				end
+				return addEl(e)
+			end
+
+			function sec:Label(c)
+				local e={__type="Label",_id=c.Flag,Title=(type(c)=="string" and c) or c.Title or "Label",
+					Value=(type(c)=="table" and c.Value) or "",_drawings={},_elemVis=true}
+				function e:SetValue(v) self.Value=tostring(v or ""); if self._vtx then self._vtx.Text=self.Value end
+					if self._id then MatchaUI.Values[self._id]=self.Value end end
+				e.Set=e.SetValue
+				return addEl(e)
+			end
+
+			function sec:Paragraph(c)
+				c=c or {}
+				local e={__type="Paragraph",Title=c.Title or "",Desc=c.Desc or c.Content or "",_drawings={},_elemVis=true}
+				function e:SetTitle(t) self.Title=tostring(t or ""); if self._ttx then self._ttx.Text=self.Title end end
+				function e:SetDesc(t) self.Desc=tostring(t or ""); if self._dtx then self._dtx.Text=self.Desc end end
+				sec._elements[#sec._elements+1]=e
+				return e
+			end
+
 			function sec:Space() sec._elements[#sec._elements+1]={__type="Space",_drawings={},_elemVis=true} end
 
 			function sec:Text(c)
@@ -621,12 +666,13 @@ function MatchaUI:CreateWindow(config)
 			return sec
 		end  -- tab:Section
 
-		-- shorthand element methods directly on tab
-		for _,m in ipairs({"Toggle","Slider","Dropdown","Button","Keybind","Input","Colorpicker","Space","Text","Section"}) do
+		-- shorthand element methods directly on tab (NOT "Section" — that is a real method)
+		for _,m in ipairs({"Toggle","Slider","Dropdown","Button","Checkbox","Keybind","Input","Colorpicker","Label","Paragraph","Space","Text"}) do
 			local mm=m
 			tab[mm]=function(self,c)
 				if #self._sections==0 then self:Section({Title=""}) end
-				return self._sections[#self._sections][mm](self._sections[#self._sections],c)
+				local s=self._sections[#self._sections]
+				return s[mm](s,c)
 			end
 		end
 		function tab:Group(c) return self:Section(c or {Title=""}) end
@@ -671,8 +717,20 @@ function MatchaUI:CreateWindow(config)
 					local ecy=cy
 					local show=tab._active and not sec._collapsed
 					el._elemVis=show
+					local elH=C.EH
 
-					if el.__type=="Toggle" then
+					if el.__type=="Toggle" and el._ctype=="Checkbox" then
+						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), C.P,ecy+9)
+						local bs=18; local bx=ew-bs-C.P; local by=ecy+(C.EH-bs)//2
+						local box  = rcd(sq(0,0,bs,bs,el.Value and T2.Toggle or T2.Button,4,53,show), bx,by)
+						local tick = rcd(tx("X",0,0,Color3.fromRGB(255,255,255),C.FMD,FNTB,55,show and el.Value), bx+4,by+1)
+						setOwn({bg,lbl,box}, show)
+						M(tick).own=(show and el.Value); M(tick).elemVis=el.Value
+						el._drawings={bg,lbl,box,tick}; el._box=box; el._tick=tick
+						chb(0,ecy,ew,ecy+C.EH, function() el:Set(not el.Value) end)
+
+					elseif el.__type=="Toggle" then
 						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
 						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), C.P,ecy+9)
 						local tw=C.TOW; local th=C.TOH
@@ -828,6 +886,21 @@ function MatchaUI:CreateWindow(config)
 						setOwn({bg,lbl,pbrd,prev}, show)
 						el._drawings={bg,lbl,pbrd,prev}; el._prev=prev
 
+					elseif el.__type=="Label" then
+						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
+						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), C.P,ecy+9)
+						local vtx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-150,ecy+9)
+						setOwn({bg,lbl,vtx}, show)
+						el._drawings={bg,lbl,vtx}; el._vtx=vtx
+
+					elseif el.__type=="Paragraph" then
+						elH=44
+						local bg  = rcd(sq(0,0,ew,elH,T2.Element,3,50,show), 0,ecy)
+						local ttx = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNTB,54,show), C.P,ecy+6)
+						local dtx = rcd(tx(el.Desc,0,0,T2.Placeholder,C.FSM,FNT,54,show), C.P,ecy+24)
+						setOwn({bg,ttx,dtx}, show)
+						el._drawings={bg,ttx,dtx}; el._ttx=ttx; el._dtx=dtx
+
 					elseif el.__type=="Space" then
 						local sln=rcd(ln(0,0,0,0,darken(T2.Button,.3),1,51,show), 4,ecy+5)
 						local sm=M(sln); sm.crx2=ew-4; sm.cry2=ecy+5; sm.own=show; sm.elemVis=show
@@ -842,7 +915,7 @@ function MatchaUI:CreateWindow(config)
 						el._drawings={t}
 					end
 
-					cy=cy+C.EH+2
+					cy=cy+elH+2
 				end  -- elements
 				cy=cy+4
 			end  -- sections
