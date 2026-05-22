@@ -172,7 +172,14 @@ MatchaUI.Themes = {
 	Rainbow     = { Accent=Color3.fromHex"#00ff41", Dialog=Color3.fromHex"#1a0030", Text=Color3.fromHex"#ffffff", Placeholder=Color3.fromHex"#00ff80", Background=Color3.fromHex"#0a0015", Button=Color3.fromHex"#ff0080", Toggle=Color3.fromHex"#33C759", Slider=Color3.fromHex"#00ffff", Element=Color3.fromHex"#200820" },
 }
 MatchaUI.Theme = MatchaUI.Themes.Dark
-function MatchaUI:SetTheme(name) self.Theme = self.Themes[name] or self.Themes.Dark end
+function MatchaUI:SetTheme(name)
+	self.Theme = self.Themes[name] or self.Themes.Dark
+	for _,w in ipairs(self._windows or {}) do pcall(function() w:_applyTheme() end) end
+end
+function MatchaUI:SetAccent(color)
+	if self.Theme then self.Theme.Accent = color end
+	for _,w in ipairs(self._windows or {}) do pcall(function() w:_applyTheme() end) end
+end
 
 -- ============================================================
 -- VK table
@@ -1121,6 +1128,38 @@ function MatchaUI:CreateWindow(config)
 		end
 		return g
 	end
+
+	-- Live theme: recolor chrome, rebuild content drawings with current theme
+	function win:_applyTheme()
+		local T2=MatchaUI.Theme
+		pcall(function()
+			wBrd.Color=darken(T2.Background,.5); wBg.Color=T2.Background
+			wBar.Color=T2.Accent; wBarB.Color=T2.Accent; wTtx.Color=T2.Text
+			wSide.Color=T2.Dialog; wSLn.Color=darken(T2.Dialog,.35); wCont.Color=T2.Background
+			wMnBg.Color=darken(T2.Accent,.4); wMnTx.Color=T2.Text
+			wSbThumb.Color=lighten(T2.Dialog,.25); wTipBg.Color=darken(T2.Dialog,.25); wTipTx.Color=T2.Text
+		end)
+		for _,t in ipairs(win._tabs) do
+			if t._active then pcall(function() t._btn.Color=lighten(T2.Accent,.2); t._btx.Color=T2.Text end)
+			else pcall(function() t._btn.Color=T2.Dialog; t._btx.Color=T2.Placeholder end) end
+		end
+		-- rebuild content drawings (they carry baked-in colors)
+		local contentSet={}
+		for _,t in ipairs(win._tabs) do
+			pcall(function() t:_closePopups() end)
+			for _,d in ipairs(t._tdraws) do contentSet[d]=true end
+		end
+		for d in pairs(contentSet) do pcall(function()d:Remove()end) end
+		local na={}
+		for _,d in ipairs(win._all) do if not contentSet[d] then na[#na+1]=d end end
+		win._all=na
+		for _,t in ipairs(win._tabs) do t._tdraws={}; t._thbs={}; t._built=false end
+		win._scrollY=0
+		if win._active then pcall(function() win._active:_build() end) end
+		win:_updateScrollbar()
+	end
+	function win:SetTheme(name) MatchaUI.Theme=MatchaUI.Themes[name] or MatchaUI.Theme; win:_applyTheme() end
+	function win:SetAccent(color) if MatchaUI.Theme then MatchaUI.Theme.Accent=color end; win:_applyTheme() end
 
 	-- Destroy
 	function win:Destroy()
