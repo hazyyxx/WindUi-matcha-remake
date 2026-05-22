@@ -286,6 +286,8 @@ function MatchaUI:CreateWindow(config)
 	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, T.Dialog,0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, darken(T.Dialog,.35),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,49))
+	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
+	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,60,false))
 	-- close & minimize
 	local cX,cY = win.wx+WW-28,win.wy+7
 	local mX,mY = win.wx+WW-52,win.wy+7
@@ -323,6 +325,35 @@ function MatchaUI:CreateWindow(config)
 	-- Content clipping check
 	local function inClip(y) return y >= win.wy+C.TH and y < win.wy+WH-2 end
 
+	-- Scrollbar geometry (driven by active tab's scroll state)
+	local function viewH() return WH-C.TH-4 end
+	function win:_updateScrollbar()
+		local sMax = win._scrollMax or 0
+		if win._minimized or not win._active or sMax<=0 then
+			wSbThumb.Visible=false; win._sbRect=nil; return
+		end
+		local vh=viewH(); local total=vh+sMax
+		local thH=math.max(24, flr(vh*vh/total))
+		local trackY=win.wy+C.TH+2
+		local travel=vh-thH
+		local sy=clamp(win._scrollY,0,sMax)
+		local thY=trackY + (sMax>0 and flr(travel*(sy/sMax)) or 0)
+		local thX=win.wx+WW-7
+		wSbThumb.Position=Vector2.new(thX,thY)
+		wSbThumb.Size=Vector2.new(4,thH)
+		wSbThumb.Visible=true
+		win._sbRect={x=thX-3,y=thY,x2=thX+7,y2=thY+thH,thH=thH,trackY=trackY,travel=travel}
+	end
+	-- Convert a mouse Y (with grab offset) into scrollY and apply
+	function win:_scrollTo(my, grabOff)
+		local r=win._sbRect; if not r then return end
+		local sMax=win._scrollMax or 0
+		local rel=clamp((my-grabOff-r.trackY)/math.max(1,r.travel),0,1)
+		win._scrollY=flr(rel*sMax)
+		if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
+		win:_updateScrollbar()
+	end
+
 	-- ---- chrome hitboxes ----
 	local closeHb = hb(cX,cY,cX+20,cY+18, function() win:Destroy() end)
 	closeHb._chrome=true; closeHb._dRx=WW-28; closeHb._dRy=7; closeHb._dW=20; closeHb._dH=18
@@ -338,6 +369,7 @@ function MatchaUI:CreateWindow(config)
 			if t._btx then t._btx.Visible=show end
 		end
 		if win._active then win._active:_setAllVis(show) end
+		win:_updateScrollbar()
 	end)
 	minHb._chrome=true; minHb._dRx=WW-52; minHb._dRy=7; minHb._dW=20; minHb._dH=18
 
@@ -386,9 +418,10 @@ function MatchaUI:CreateWindow(config)
 		local tbHb=hb(x1,y1,x2,y2, function()
 			if win._active==tab then return end
 			if win._active then win._active:_deactivate() end
-			win._active=tab; win._scrollY=0
+			win._active=tab; win._scrollY=0; win._scrollMax=tab._scrollMax or 0
 			tab:_activate()
-			if not tab._built then tab:_build() else tab:_refreshContentHbs() end
+			if not tab._built then tab:_build() else tab:_refreshContentPos(); tab:_refreshContentHbs() end
+			win:_updateScrollbar()
 		end)
 		tbHb._tabHb=true; tbHb._tabIdx=idx
 
@@ -709,7 +742,6 @@ function MatchaUI:CreateWindow(config)
 					end)
 					cy=cy+C.SH+2
 					-- suppress unused refs
-					_=shBg; _=shTx; _=shArr; _=shrH
 				end
 
 				-- Elements
@@ -826,7 +858,6 @@ function MatchaUI:CreateWindow(config)
 								tab._thbs[#tab._thbs+1]=itemH
 							end
 						end)
-						_=ddHb
 
 					elseif el.__type=="Keybind" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
@@ -920,9 +951,11 @@ function MatchaUI:CreateWindow(config)
 				cy=cy+4
 			end  -- sections
 
-			win._scrollMax=math.max(0,cy-(WH-C.TH)+C.P)
+			tab._scrollMax=math.max(0,cy-(WH-C.TH)+C.P)
+			if tab._active then win._scrollMax=tab._scrollMax end
 			tab:_refreshContentPos()
 			tab:_refreshContentHbs()
+			win:_updateScrollbar()
 		end  -- tab:_build
 
 		-- First tab auto-activates and builds
@@ -976,6 +1009,7 @@ function MatchaUI:CreateWindow(config)
 	-- ============================================================
 	task.spawn(function()
 		local lmb=false; local drag=false; local dox,doy=0,0; local sldHb=nil
+		local sbDrag=false; local sbOff=0
 
 		while win._alive do
 			task.wait(0.033)
@@ -987,7 +1021,11 @@ function MatchaUI:CreateWindow(config)
 
 			if rise then
 				local inW = mx>=win.wx and mx<=win.wx+WW and my>=win.wy and my<=win.wy+WH
-				if inW then
+				-- scrollbar thumb grab (highest priority)
+				local r=win._sbRect
+				if r and mx>=r.x and mx<=r.x2 and my>=r.y and my<=r.y2 then
+					sbDrag=true; sbOff=my-r.y
+				elseif inW then
 					-- title bar drag (not on buttons)
 					if my>=win.wy and my<=win.wy+C.TH and mx<win.wx+WW-56 then
 						drag=true; dox=mx-win.wx; doy=my-win.wy
@@ -1023,12 +1061,14 @@ function MatchaUI:CreateWindow(config)
 						refreshChrome(); refreshChromeHbs()
 						for _,t in ipairs(win._tabs) do t:_refreshTabHb() end
 						if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
+						win:_updateScrollbar()
 					end
 				end
+				if sbDrag then pcall(function() win:_scrollTo(my, sbOff) end) end
 				if sldHb then pcall(sldHb.drag,mx) end
 			end
 
-			if fall then drag=false; sldHb=nil end
+			if fall then drag=false; sldHb=nil; sbDrag=false end
 			lmb=lnow
 		end
 	end)
