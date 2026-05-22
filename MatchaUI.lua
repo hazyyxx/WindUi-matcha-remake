@@ -493,10 +493,20 @@ function MatchaUI:CreateWindow(config)
 			end
 		end
 
+		function tab:_closePopups()
+			for _,sc in ipairs(tab._sections) do
+				for _,el in ipairs(sc._elements) do
+					if el._popupDs then for _,d in ipairs(el._popupDs) do pcall(function()d:Remove()end) end; el._popupDs=nil end
+				end
+			end
+			for i=#tab._thbs,1,-1 do if tab._thbs[i]._pop then table.remove(tab._thbs,i) end end
+		end
+
 		function tab:_deactivate()
 			tab._active=false
 			tab._btn.Color=MatchaUI.Theme.Dialog
 			tab._btx.Color=MatchaUI.Theme.Placeholder
+			tab:_closePopups()
 			tab:_setAllVis(false)
 		end
 
@@ -973,6 +983,67 @@ function MatchaUI:CreateWindow(config)
 						local prev = rcd(sq(0,0,28,16,el.Value,3,53,show), ew-37,ecy+8)
 						setOwn({bg,lbl,pbrd,prev}, show)
 						el._drawings={bg,lbl,pbrd,prev}; el._prev=prev
+						local function closeCP()
+							if el._popupDs then for _,d in ipairs(el._popupDs) do pcall(function()d:Remove()end) end; el._popupDs=nil end
+							for i=#tab._thbs,1,-1 do if tab._thbs[i]._pop then table.remove(tab._thbs,i) end end
+						end
+						local cpHb=chb(0,ecy,ew,ecy+C.EH, function()
+							if el._popupDs then closeCP(); return end
+							el._popupDs={}
+							local ds=el._popupDs
+							local function addD(d) ds[#ds+1]=d; return d end
+							local pw=206; local cols=10; local rows=8; local sw=19
+							local R=flr(el.Value.R*255); local G=flr(el.Value.G*255); local B=flr(el.Value.B*255)
+							local sliders={}; local hexTx
+							local function refresh()
+								local c=Color3.fromRGB(R,G,B); el:Set(c)
+								if hexTx then hexTx.Text=string.format("#%02X%02X%02X",R,G,B) end
+								local chv={R,G,B}
+								for i,sl in ipairs(sliders) do
+									local pp=chv[i]/255
+									sl.fill.Size=Vector2.new(math.max(1,flr(pp*sl.w)),6)
+									sl.thumb.Position=Vector2.new(sl.x+flr(pp*sl.w),sl.y+3)
+								end
+							end
+							local palH=rows*sw; local slArea=3*20+6; local ph=8+palH+10+slArea+8+16+4
+							local px=cpHb.x; local py=cpHb.y+C.EH
+							if py+ph>win.wy+WH-6 then py=cpHb.y-ph end
+							if px+pw>win.wx+WW then px=win.wx+WW-pw-4 end
+							local panel=addD(Drawing.new("Square")); panel.Filled=true; panel.Color=T2.Dialog; panel.Corner=5; panel.ZIndex=80
+							pcall(function() panel.Position=Vector2.new(px,py); panel.Size=Vector2.new(pw,ph); panel.Visible=true end)
+							local palX=px+8; local palY=py+8
+							for r=0,rows-1 do for cI=0,cols-1 do
+								local col
+								if cI==cols-1 then col=Color3.fromHSV(0,0,1-(r/(rows-1))) else col=Color3.fromHSV(cI/(cols-1),1,1-(r/rows)*0.92) end
+								local swx=palX+cI*sw; local swy=palY+r*sw
+								local sd=addD(Drawing.new("Square")); sd.Filled=true; sd.Color=col; sd.ZIndex=81
+								pcall(function() sd.Position=Vector2.new(swx,swy); sd.Size=Vector2.new(sw-2,sw-2); sd.Visible=true end)
+								local cc=col
+								tab._thbs[#tab._thbs+1]={x=swx,y=swy,x2=swx+sw-2,y2=swy+sw-2,_pop=true,fn=function() R=flr(cc.R*255); G=flr(cc.G*255); B=flr(cc.B*255); refresh() end}
+							end end
+							local sY=palY+palH+10; local labels={"R","G","B"}; local cols3={Color3.fromRGB(225,70,70),Color3.fromRGB(70,200,90),Color3.fromRGB(80,140,235)}; local chans={R,G,B}
+							for i=1,3 do
+								local ly=sY+(i-1)*20
+								local lt=addD(Drawing.new("Text")); lt.Text=labels[i]; lt.Color=T2.Text; lt.Size=C.FSM; lt.ZIndex=82; pcall(function() lt.Font=FNT end)
+								pcall(function() lt.Position=Vector2.new(px+8,ly-1); lt.Visible=true end)
+								local tkx=px+24; local tkw=pw-24-12
+								local tbg=addD(Drawing.new("Square")); tbg.Filled=true; tbg.Color=darken(T2.Button,.3); tbg.Corner=2; tbg.ZIndex=82
+								pcall(function() tbg.Position=Vector2.new(tkx,ly+2); tbg.Size=Vector2.new(tkw,6); tbg.Visible=true end)
+								local fl=addD(Drawing.new("Square")); fl.Filled=true; fl.Color=cols3[i]; fl.Corner=2; fl.ZIndex=83
+								pcall(function() fl.Position=Vector2.new(tkx,ly+2); fl.Size=Vector2.new(math.max(1,flr(chans[i]/255*tkw)),6); fl.Visible=true end)
+								local th=addD(Drawing.new("Circle")); th.Filled=true; th.Color=Color3.fromRGB(255,255,255); th.Radius=5; th.ZIndex=84; pcall(function() th.NumSides=16 end)
+								pcall(function() th.Position=Vector2.new(tkx+flr(chans[i]/255*tkw),ly+5); th.Visible=true end)
+								sliders[i]={fill=fl,thumb=th,x=tkx,y=ly+2,w=tkw}
+								local idx=i
+								tab._thbs[#tab._thbs+1]={x=tkx-6,y=ly-2,x2=tkx+tkw+6,y2=ly+14,_pop=true,isDrag=true,fn=function() end,drag=function(mx)
+									local pp=clamp((mx-tkx)/tkw,0,1); local v=flr(pp*255)
+									if idx==1 then R=v elseif idx==2 then G=v else B=v end
+									refresh()
+								end}
+							end
+							hexTx=addD(Drawing.new("Text")); hexTx.Text=string.format("#%02X%02X%02X",R,G,B); hexTx.Color=T2.Placeholder; hexTx.Size=C.FSM; hexTx.ZIndex=82; pcall(function() hexTx.Font=FNT end)
+							pcall(function() hexTx.Position=Vector2.new(px+8,py+ph-18); hexTx.Visible=true end)
+						end)
 
 					elseif el.__type=="Label" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
