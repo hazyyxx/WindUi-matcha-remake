@@ -58,8 +58,10 @@ local function sq(x,y,w,h,col,corner,zi,vis)
 end
 local function tx(text,x,y,col,sz,font,zi,vis)
 	local d = Drawing.new("Text")
-	d.Text=tostring(text); d.Color=col; d.Size=sz or C.FMD; d.Font=font or FNT
-	d.Outline=true; d.ZIndex=zi or 54
+	d.Text=tostring(text); d.Color=col; d.Size=sz or C.FMD
+	pcall(function() d.Font=font or FNT end)
+	pcall(function() d.Outline=true end)
+	d.ZIndex=zi or 54
 	d.Position=Vector2.new(math.floor(x+.5),math.floor(y+.5))
 	d.Visible=vis~=false
 	return d
@@ -75,7 +77,8 @@ local function ci(x,y,r,col,zi,vis)
 	local d = Drawing.new("Circle")
 	d.Position=Vector2.new(math.floor(x+.5),math.floor(y+.5))
 	d.Radius=r; d.Color=col; d.Filled=true; d.Thickness=1
-	d.NumSides=20; d.ZIndex=zi or 53; d.Visible=vis~=false
+	pcall(function() d.NumSides=20 end)
+	d.ZIndex=zi or 53; d.Visible=vis~=false
 	return d
 end
 local function lighten(c,t)
@@ -89,6 +92,11 @@ local function darken(c,t)
 end
 local function clamp(v,a,b) return math.max(a,math.min(b,v)) end
 local function flr(x) return math.floor(x+.5) end
+
+-- Matcha Drawing objects reject custom properties, so per-drawing metadata
+-- (relative offsets, visibility flags) lives in a weak-keyed side table.
+local META = setmetatable({}, {__mode="k"})
+local function M(d) local m=META[d]; if not m then m={}; META[d]=m end; return m end
 
 -- ============================================================
 -- Themes
@@ -271,8 +279,8 @@ function MatchaUI:CreateWindow(config)
 	-- Each drawing carries _rx,_ry (relative offsets from wx,wy).
 	-- Lines also carry _rx2,_ry2 for the To endpoint.
 	local function setRel(d,rx,ry,rx2,ry2)
-		d._rx=rx; d._ry=ry
-		if rx2 then d._rx2=rx2; d._ry2=ry2 end
+		local m=M(d); m.rx=rx; m.ry=ry
+		if rx2 then m.rx2=rx2; m.ry2=ry2 end
 	end
 	setRel(wBrd,-1,-1); setRel(wBg,0,0); setRel(wBar,0,0); setRel(wBarB,0,C.TH-4)
 	setRel(wTtx,C.P+2,9); setRel(wSide,0,C.TH); setRel(wSLn,C.SW,C.TH,C.SW,WH)
@@ -281,10 +289,11 @@ function MatchaUI:CreateWindow(config)
 
 	local function refreshChrome()
 		for _,d in ipairs(win._all) do
-			if d._rx then
-				d.Position = Vector2.new(flr(win.wx+d._rx+.5),flr(win.wy+d._ry+.5))
-				if d._rx2 then
-					d.To = Vector2.new(flr(win.wx+d._rx2+.5),flr(win.wy+d._ry2+.5))
+			local m=META[d]
+			if m and m.rx then
+				d.Position = Vector2.new(flr(win.wx+m.rx+.5),flr(win.wy+m.ry+.5))
+				if m.rx2 then
+					d.To = Vector2.new(flr(win.wx+m.rx2+.5),flr(win.wy+m.ry2+.5))
 				end
 			end
 		end
@@ -326,7 +335,6 @@ function MatchaUI:CreateWindow(config)
 		local by=tabBtnY(idx)
 		local btn=reg(sq(win.wx+C.TBP,by,C.SW-C.TBP*2,C.TBH, T2.Dialog,3,52))
 		local btx=reg(tx(title,win.wx+C.P+6,by+6, T2.Placeholder,C.FSM,FNT,54))
-		btn._btnIdx=idx; btx._btnIdx=idx
 		setRel(btn,C.TBP,(idx-1)*(C.TBH+2)+C.TH+C.TBP)
 		setRel(btx,C.P+6,(idx-1)*(C.TBH+2)+C.TH+C.TBP+6)
 		return btn,btx
@@ -366,7 +374,7 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_setAllVis(v)
 			for _,d in ipairs(tab._tdraws) do
-				if v and d._own then d.Visible=inClip(d.Position.Y)
+				if v and M(d).own then d.Visible=inClip(d.Position.Y)
 				elseif not v then d.Visible=false end
 			end
 		end
@@ -393,27 +401,30 @@ function MatchaUI:CreateWindow(config)
 
 		-- register content drawing: stores relative offset within content area
 		local function rcd(d, cx,cy, opts)
-			d._crx=cx; d._cry=cy  -- relative to content area origin
-			d._own=true
-			if opts then for k,v in pairs(opts) do d[k]=v end end
+			local m=M(d); m.crx=cx; m.cry=cy; m.own=true  -- relative to content area origin
+			if opts then for k,v in pairs(opts) do m[k]=v end end
 			tab._tdraws[#tab._tdraws+1]=d
 			win._all[#win._all+1]=d
 			return d
+		end
+		local function setOwn(list, show)
+			for _,d in ipairs(list) do local m=M(d); m.own=show; m.elemVis=show end
 		end
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
 			local clipT=oy; local clipB=oy+WH-C.TH-2
 			for _,d in ipairs(tab._tdraws) do
-				if d._crx ~= nil then
-					local ax=ox+C.P+d._crx
-					local ay=oy+d._cry-sy
+				local m=META[d]
+				if m and m.crx ~= nil then
+					local ax=ox+C.P+m.crx
+					local ay=oy+m.cry-sy
 					d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-					if d._crx2~=nil then  -- line To
-						d.To=Vector2.new(flr(ox+C.P+d._crx2+.5),flr(oy+d._cry2-sy+.5))
+					if m.crx2~=nil then  -- line To
+						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
 					end
-					if d._own then
-						d.Visible = tab._active and d._elemVis~=false and (ay>=clipT and ay<clipB)
+					if m.own then
+						d.Visible = tab._active and m.elemVis~=false and (ay>=clipT and ay<clipB)
 					end
 				end
 			end
@@ -463,9 +474,10 @@ function MatchaUI:CreateWindow(config)
 					if self._track then self._track.Color=v and MatchaUI.Theme.Toggle or MatchaUI.Theme.Button end
 					if self._thumb and self._track then
 						local th=C.TOH; local tw=C.TOW
-						self._thumb._crx = v and (self._track._crx+tw-th//2) or (self._track._crx+th//2)
-						local base=self._track.Position.X-self._track._crx
-						self._thumb.Position=Vector2.new(flr(base+self._thumb._crx+.5),self._thumb.Position.Y)
+						local tm=M(self._thumb); local trm=M(self._track)
+						tm.crx = v and (trm.crx+tw-th//2) or (trm.crx+th//2)
+						local base=self._track.Position.X-trm.crx
+						self._thumb.Position=Vector2.new(flr(base+tm.crx+.5),self._thumb.Position.Y)
 					end
 					if not nc then pcall(self.Callback,v) end
 				end
@@ -485,10 +497,12 @@ function MatchaUI:CreateWindow(config)
 						local pct=(v-self.Min)/math.max(1,self.Max-self.Min)
 						local fw=math.max(4,flr(pct*self._trackW+.5))
 						self._fill.Size=Vector2.new(fw,self._fill.Size.Y)
-						if self._thumb2 and self._fill._crx~=nil then
-							self._thumb2._crx=self._fill._crx+fw
-							local base=self._fill.Position.X-self._fill._crx
-							self._thumb2.Position=Vector2.new(flr(base+self._thumb2._crx+.5),self._fill.Position.Y+self._fill.Size.Y//2)
+						local fm=M(self._fill)
+						if self._thumb2 and fm.crx~=nil then
+							local t2m=M(self._thumb2)
+							t2m.crx=fm.crx+fw
+							local base=self._fill.Position.X-fm.crx
+							self._thumb2.Position=Vector2.new(flr(base+t2m.crx+.5),self._fill.Position.Y+self._fill.Size.Y//2)
 						end
 						if self._vtx then
 							local isF=self.Step~=math.floor(self.Step)
@@ -632,7 +646,7 @@ function MatchaUI:CreateWindow(config)
 							local show=not sec._collapsed and tab._active
 							el._elemVis=show
 							for _,d in ipairs(el._drawings or {}) do
-								d._own=show
+								M(d).own=show
 								d.Visible=show and inClip(d.Position.Y)
 							end
 						end
@@ -656,7 +670,7 @@ function MatchaUI:CreateWindow(config)
 						local trk  = rcd(sq(0,0,tw,th,el.Value and T2.Toggle or T2.Button,th//2,53,show), trkX,trkY)
 						local tmX  = el.Value and (trkX+tw-th+2) or (trkX+2)
 						local tmb  = rcd(ci(0,0,th//2-2,Color3.fromRGB(255,255,255),55,show), tmX+th//2-2,trkY+th//2)
-						for _,d in ipairs({bg,lbl,trk,tmb}) do d._own=show; d._elemVis=show end
+						setOwn({bg,lbl,trk,tmb}, show)
 						el._drawings={bg,lbl,trk,tmb}; el._track=trk; el._thumb=tmb
 						chb(0,ecy,ew,ecy+C.EH, function()
 							el:Set(not el.Value)
@@ -676,7 +690,7 @@ function MatchaUI:CreateWindow(config)
 						local isF = el.Step~=math.floor(el.Step)
 						local vts = isF and string.format("%.1f",el.Value) or tostring(flr(el.Value))
 						local vtx = rcd(tx(vts,0,0,T2.Placeholder,C.FSM,FNT,54,show), tkX-44,ecy+7)
-						for _,d in ipairs({bg,lbl,tkBg,fill,tmb,vtx}) do d._own=show; d._elemVis=show end
+						setOwn({bg,lbl,tkBg,fill,tmb,vtx}, show)
 						el._drawings={bg,lbl,tkBg,fill,tmb,vtx}
 						el._fill=fill; el._thumb2=tmb; el._trackW=tw; el._vtx=vtx
 						-- drag hitbox
@@ -692,7 +706,7 @@ function MatchaUI:CreateWindow(config)
 						local bg = rcd(sq(0,0,ew,bh,T2.Button,4,51,show), 0,ecy+3)
 						local cw = math.min(#el.Title*7,ew-16)
 						local lbl= rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,55,show), flr((ew-cw)/2),ecy+3+flr((bh-C.FMD)/2))
-						for _,d in ipairs({bg,lbl}) do d._own=show; d._elemVis=show end
+						setOwn({bg,lbl}, show)
 						el._drawings={bg,lbl}; el._bg=bg
 						chb(0,ecy+3,ew,ecy+3+bh, function()
 							local oc=bg.Color; bg.Color=lighten(T2.Button,.35)
@@ -705,7 +719,7 @@ function MatchaUI:CreateWindow(config)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), C.P,ecy+9)
 						local stx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-92,ecy+9)
 						local arr = rcd(tx("▾",0,0,T2.Placeholder,C.FMD,FNT,54,show), ew-20,ecy+9)
-						for _,d in ipairs({bg,lbl,stx,arr}) do d._own=show; d._elemVis=show end
+						setOwn({bg,lbl,stx,arr}, show)
 						el._drawings={bg,lbl,stx,arr}; el._stx=stx
 
 						local function closePopup()
@@ -751,7 +765,7 @@ function MatchaUI:CreateWindow(config)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), C.P,ecy+9)
 						local kbg = rcd(sq(0,0,62,18,T2.Button,3,52,show), ew-70,ecy+7)
 						local ktx = rcd(tx("["..el.Value.."]",0,0,T2.Text,C.FSM,FNT,55,show), ew-66,ecy+9)
-						for _,d in ipairs({bg,lbl,kbg,ktx}) do d._own=show; d._elemVis=show end
+						setOwn({bg,lbl,kbg,ktx}, show)
 						el._drawings={bg,lbl,kbg,ktx}; el._ktx=ktx; el._kbg=kbg
 						chb(ew-70,ecy+7,ew-8,ecy+25, function()
 							kbg.Color=lighten(T2.Accent,.2); ktx.Text="[...]"
@@ -767,7 +781,7 @@ function MatchaUI:CreateWindow(config)
 						local ibg = rcd(sq(0,0,126,20,T2.Button,3,52,show), ew-134,ecy+6)
 						local dt  = #el.Value>0 and el.Value or el.Placeholder
 						local itx = rcd(tx(dt,0,0, #el.Value>0 and T2.Text or T2.Placeholder,C.FSM,FNT,55,show), ew-130,ecy+9)
-						for _,d in ipairs({bg,lbl,ibg,itx}) do d._own=show; d._elemVis=show end
+						setOwn({bg,lbl,ibg,itx}, show)
 						el._drawings={bg,lbl,ibg,itx}; el._itx=itx; el._ibg=ibg
 						chb(ew-134,ecy+6,ew-8,ecy+26, function()
 							if win._iCapture==el then return end
@@ -801,13 +815,12 @@ function MatchaUI:CreateWindow(config)
 						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), C.P,ecy+9)
 						local pbrd = rcd(sq(0,0,32,20,T2.Placeholder,3,52,show), ew-39,ecy+6)
 						local prev = rcd(sq(0,0,28,16,el.Value,3,53,show), ew-37,ecy+8)
-						for _,d in ipairs({bg,lbl,pbrd,prev}) do d._own=show; d._elemVis=show end
+						setOwn({bg,lbl,pbrd,prev}, show)
 						el._drawings={bg,lbl,pbrd,prev}; el._prev=prev
 
 					elseif el.__type=="Space" then
 						local sln=rcd(ln(0,0,0,0,darken(T2.Button,.3),1,51,show), 4,ecy+5)
-						sln._crx2=ew-4; sln._cry2=ecy+5
-						sln._own=show; sln._elemVis=show
+						local sm=M(sln); sm.crx2=ew-4; sm.cry2=ecy+5; sm.own=show; sm.elemVis=show
 						el._drawings={sln}
 
 					elseif el.__type=="Text" then
@@ -815,7 +828,7 @@ function MatchaUI:CreateWindow(config)
 						local ff=el.isHdr and FNTB or FNT
 						local fs=el.isHdr and C.FMD or C.FSM
 						local t=rcd(tx(el.text,0,0,fc,fs,ff,54,show), C.P,ecy+5)
-						t._own=show; t._elemVis=show
+						setOwn({t}, show)
 						el._drawings={t}
 					end
 
