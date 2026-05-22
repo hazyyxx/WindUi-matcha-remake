@@ -1096,9 +1096,13 @@ function MatchaUI:CreateWindow(config)
 								end
 							end
 							local palH=rows*sw; local slArea=3*20+6; local ph=8+palH+10+slArea+8+16+4
-							local px=cpHb.x; local py=cpHb.y+C.EH
-							if py+ph>win.wy+WH-6 then py=cpHb.y-ph end
-							if px+pw>win.wx+WW then px=win.wx+WW-pw-4 end
+							-- open to the RIGHT of the window so it doesn't cover the menu
+							local vpX=workspace.CurrentCamera.ViewportSize.X
+							local px=win.wx+WW+8; local py=cpHb.y
+							if px+pw>vpX then px=win.wx-pw-8 end           -- no room right -> left side
+							if px<0 then px=win.wx+WW-pw-8 end             -- fallback: inside
+							if py+ph>win.wy+WH then py=win.wy+WH-ph end
+							if py<win.wy+C.TH then py=win.wy+C.TH end
 							local panel=addD(Drawing.new("Square")); panel.Filled=true; panel.Color=T2.Dialog; panel.Corner=5; panel.ZIndex=80
 							pcall(function() panel.Position=Vector2.new(px,py); panel.Size=Vector2.new(pw,ph); panel.Visible=true end)
 							local palX=px+8; local palY=py+8
@@ -1283,11 +1287,39 @@ function MatchaUI:CreateWindow(config)
 		s:Keybind({Title="Menu Toggle Key", Desc="Show / hide this menu", Value=(VK[win._toggleKey] or "RShift"),
 			Callback=function(k) win:SetToggleKey(k) end})
 		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
-		local s2=t:Section({Title="Info"})
-		s2:Label({Title="Library", Value="MatchaUI v"..tostring(MatchaUI.Version)})
-		s2:Label({Title="Window", Value=tostring(win.Title)})
-		win._fpsLabel = s2:Label({Title="FPS", Value="--"})
-		s2:Paragraph({Title="MatchaUI", Desc="Drawing-based WindUI-style interface for Matcha."})
+
+		-- Live client info panel
+		local s2=t:Section({Title="Client Info"})
+		win._infoLabels = {}
+		local function infoLbl(key,title) local l=s2:Label({Title=title, Value="--"}); win._infoLabels[key]=l; return l end
+		infoLbl("User","User"); infoLbl("Game","Game"); infoLbl("Ping","Ping")
+		win._fpsLabel = infoLbl("FPS","FPS")
+		infoLbl("Uptime","Uptime"); infoLbl("Focused","Focused"); infoLbl("Health","Health"); infoLbl("Camera","Camera")
+
+		local s3=t:Section({Title="Library"})
+		s3:Label({Title="Version", Value="MatchaUI v"..tostring(MatchaUI.Version)})
+		s3:Paragraph({Title="MatchaUI", Desc="Drawing-based WindUI-style interface for Matcha."})
+
+		-- update info each second
+		win._startTime = win._startTime or tick()
+		task.spawn(function()
+			local gameName
+			pcall(function() gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name end)
+			local LP = Players.LocalPlayer
+			while win._alive and win._infoLabels do
+				local L=win._infoLabels
+				local function set(k,v) local e=L[k]; if e and e.SetValue then pcall(function() e:SetValue(v) end) end end
+				set("User", (LP and (LP.DisplayName or LP.Name)) or "?")
+				set("Game", gameName or tostring(game.PlaceId))
+				pcall(function() set("Ping", math.floor(LP:GetNetworkPing()*1000+.5).." ms") end)
+				set("FPS", tostring(win._fps or 0))
+				local up=math.floor(tick()-win._startTime); set("Uptime", string.format("%02d:%02d", up//60, up%60))
+				local foc=true; pcall(function() if isrbxactive then foc=isrbxactive() end end); set("Focused", foc and "Yes" or "No")
+				pcall(function() local h=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid"); if h then set("Health", string.format("%d / %d", math.floor(h.Health), math.floor(h.MaxHealth))) end end)
+				pcall(function() local p=workspace.CurrentCamera.CFrame.Position; set("Camera", string.format("%d, %d, %d", p.X, p.Y, p.Z)) end)
+				task.wait(1)
+			end
+		end)
 		return t
 	end
 
