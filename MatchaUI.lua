@@ -99,6 +99,16 @@ end
 local function darken(c,t)
 	return Color3.fromRGB(math.floor(c.R*255*(1-t)),math.floor(c.G*255*(1-t)),math.floor(c.B*255*(1-t)))
 end
+-- HSV -> Color3 (avoids relying on Color3.fromHSV which may be absent)
+local function hsv(h,s,v)
+	local r,g,b
+	local i=math.floor(h*6); local f=h*6-i
+	local p=v*(1-s); local q=v*(1-f*s); local t=v*(1-(1-f)*s)
+	i=i%6
+	if i==0 then r,g,b=v,t,p elseif i==1 then r,g,b=q,v,p elseif i==2 then r,g,b=p,v,t
+	elseif i==3 then r,g,b=p,q,v elseif i==4 then r,g,b=t,p,v else r,g,b=v,p,q end
+	return Color3.fromRGB(math.floor(r*255+.5),math.floor(g*255+.5),math.floor(b*255+.5))
+end
 local function clamp(v,a,b) return math.max(a,math.min(b,v)) end
 local function flr(x) return math.floor(x+.5) end
 
@@ -350,9 +360,9 @@ function MatchaUI:CreateWindow(config)
 	local cX,cY = win.wx+WW-28,win.wy+7
 	local mX,mY = win.wx+WW-52,win.wy+7
 	local wClBg = reg(sq(cX,cY,20,18,Color3.fromRGB(180,40,40),3,56))
-	local wClTx = reg(tx("×",cX+5,cY+2,Color3.fromRGB(255,255,255),C.FLG,FNTB,58))
+	local wClTx = reg(tx("x",cX+6,cY+2,Color3.fromRGB(255,255,255),C.FLG,FNTB,58))
 	local wMnBg = reg(sq(mX,mY,20,18,darken(T.Accent,.4),3,56))
-	local wMnTx = reg(tx("—",mX+4,mY+3,T.Text,C.FSM,FNTB,58))
+	local wMnTx = reg(tx("-",mX+7,mY+1,T.Text,C.FLG,FNTB,58))
 
 	-- ---- position refresh ----
 	-- Each drawing carries _rx,_ry (relative offsets from wx,wy).
@@ -531,7 +541,7 @@ function MatchaUI:CreateWindow(config)
 		local function CX() return win.wx+C.SW+1 end
 		local function CY() return win.wy+C.TH end
 		local function CW() return WW-C.SW-1 end
-		local function EW() return CW()-C.P*2 end
+		local function EW() return CW()-C.P*2-8 end  -- reserve right gutter for scrollbar
 
 		-- register content drawing: stores relative offset within content area
 		local function rcd(d, cx,cy, opts)
@@ -685,8 +695,8 @@ function MatchaUI:CreateWindow(config)
 			function sec:Button(c)
 				local e={__type="Button",Title=c.Title or "Button",Callback=c.Callback or function()end,_drawings={},_elemVis=true}
 				function e:Highlight()
-					if self._bg then local oc=self._bg.Color; self._bg.Color=lighten(MatchaUI.Theme.Button,.4)
-						task.spawn(function() task.wait(.25); self._bg.Color=oc end) end
+					if self._bg then local oc=self._bg.Color; pcall(function() self._bg.Color=lighten(MatchaUI.Theme.Button,.4) end)
+						task.spawn(function() task.wait(.25); pcall(function() self._bg.Color=oc end) end) end
 				end
 				return addEl(e,c)
 			end
@@ -802,12 +812,12 @@ function MatchaUI:CreateWindow(config)
 				if sec._title ~= "" then
 					local shBg  = rcd(sq(0,0,ew,C.SH,darken(T2.Accent,.15),3,51,tab._active), 0,cy)
 					local shTx  = rcd(tx(sec._title,0,0,T2.Text,C.FSM,FNTB,55,tab._active), C.P,cy+6)
-					local shArr = rcd(tx(sec._collapsed and "▶" or "▼",0,0,T2.Placeholder,C.FSM,FNT,55,tab._active), ew-18,cy+6)
+					local shArr = rcd(tx(sec._collapsed and "+" or "-",0,0,T2.Placeholder,C.FSM,FNT,55,tab._active), ew-18,cy+6)
 					-- collapse hitbox
 					local scy=cy
 					local shrH=chb(0,scy,ew,scy+C.SH, function()
 						sec._collapsed=not sec._collapsed
-						shArr.Text=sec._collapsed and "▶" or "▼"
+						shArr.Text=sec._collapsed and "+" or "-"
 						for _,el in ipairs(sec._elements) do
 							local show=not sec._collapsed and tab._active
 							el._elemVis=show
@@ -888,8 +898,8 @@ function MatchaUI:CreateWindow(config)
 						setOwn({bg,lbl}, show)
 						el._drawings={bg,lbl}; el._bg=bg
 						chb(0,ecy+3,ew,ecy+3+bh, function()
-							local oc=bg.Color; bg.Color=lighten(T2.Button,.35)
-							task.spawn(function() task.wait(.12); bg.Color=oc end)
+							local oc=bg.Color; pcall(function() bg.Color=lighten(T2.Button,.35) end)
+							task.spawn(function() task.wait(.12); pcall(function() bg.Color=oc end) end)
 							pcall(el.Callback)
 						end)
 
@@ -897,7 +907,7 @@ function MatchaUI:CreateWindow(config)
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,3,50,show), 0,ecy)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
 						local stx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-92,ecy+9)
-						local arr = rcd(tx("▾",0,0,T2.Placeholder,C.FMD,FNT,54,show), ew-20,ecy+9)
+						local arr = rcd(tx("v",0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-18,ecy+10)
 						setOwn({bg,lbl,stx,arr}, show)
 						el._drawings={bg,lbl,stx,arr}; el._stx=stx
 
@@ -962,30 +972,12 @@ function MatchaUI:CreateWindow(config)
 						setOwn({bg,lbl,ibg,itx}, show)
 						el._drawings={bg,lbl,ibg,itx}; el._itx=itx; el._ibg=ibg
 						chb(ew-134,ecy+6,ew-8,ecy+26, function()
-							if win._iCapture==el then return end
-							if win._iConn then pcall(function()win._iConn:Disconnect()end); win._iConn=nil end
-							ibg.Color=lighten(T2.Accent,.1); win._iCapture=el
-							win._iConn=UIS.InputBegan:Connect(function(inp)
-								if win._iCapture~=el then return end
-								local vk=inpVK(inp)
-								if vk==0x0D or vk==0x1B then
-									ibg.Color=T2.Button; win._iCapture=nil
-									pcall(function()win._iConn:Disconnect()end); win._iConn=nil
-									if vk==0x0D then pcall(el.Callback,el.Value) end
-								elseif vk==0x08 then
-									el.Value=el.Value:sub(1,-2)
-									itx.Text=#el.Value>0 and el.Value or el.Placeholder
-									itx.Color=#el.Value>0 and T2.Text or T2.Placeholder
-									if el._id then MatchaUI.Values[el._id]=el.Value end
-								else
-									local ch=VC[vk]
-									if ch then
-										if iskeypressed and (iskeypressed(0x10) or iskeypressed(0xA0) or iskeypressed(0xA1)) then ch=ch:upper() end
-										el.Value=el.Value..ch; itx.Text=el.Value; itx.Color=T2.Text
-										if el._id then MatchaUI.Values[el._id]=el.Value end
-									end
-								end
-							end)
+							-- typing handled by the key-polling loop (UIS keyboard is unreliable in Matcha)
+							if win._iCapture and win._iCapture~=el and win._iCapture._ibg then
+								pcall(function() win._iCapture._ibg.Color=T2.Button end)
+							end
+							win._iCapture=el; el._ibg=ibg; el._itx=itx
+							pcall(function() ibg.Color=lighten(T2.Accent,.1) end)
 						end)
 
 					elseif el.__type=="Colorpicker" then
@@ -1026,7 +1018,7 @@ function MatchaUI:CreateWindow(config)
 							local palX=px+8; local palY=py+8
 							for r=0,rows-1 do for cI=0,cols-1 do
 								local col
-								if cI==cols-1 then col=Color3.fromHSV(0,0,1-(r/(rows-1))) else col=Color3.fromHSV(cI/(cols-1),1,1-(r/rows)*0.92) end
+								if cI==cols-1 then col=hsv(0,0,1-(r/(rows-1))) else col=hsv(cI/(cols-1),1,1-(r/rows)*0.92) end
 								local swx=palX+cI*sw; local swy=palY+r*sw
 								local sd=addD(Drawing.new("Square")); sd.Filled=true; sd.Color=col; sd.ZIndex=81
 								pcall(function() sd.Position=Vector2.new(swx,swy); sd.Size=Vector2.new(sw-2,sw-2); sd.Visible=true end)
@@ -1188,9 +1180,11 @@ function MatchaUI:CreateWindow(config)
 	task.spawn(function()
 		local lmb=false; local drag=false; local dox,doy=0,0; local sldHb=nil
 		local sbDrag=false; local sbOff=0
+		local keyDown={}; local frameN=0
 
 		while win._alive do
 			task.wait(0.033)
+			frameN=frameN+1
 			local m=getMouse(); if not m then continue end
 			local mx,my=m.X,m.Y
 			local lnow=ismouse1pressed()
@@ -1244,6 +1238,54 @@ function MatchaUI:CreateWindow(config)
 				end
 				if sbDrag then pcall(function() win:_scrollTo(my, sbOff) end) end
 				if sldHb then pcall(sldHb.drag,mx) end
+			end
+
+			-- keyboard polling (input typing + keybind capture) — iskeypressed is reliable
+			if (win._iCapture or win._kCapture) and iskeypressed then
+				local shiftDn = iskeypressed(0x10) or iskeypressed(0xA0) or iskeypressed(0xA1)
+				for _,vk in pairs(KV) do
+					if vk~=0x01 and vk~=0x02 and vk~=0x04 then
+						local down = iskeypressed(vk)
+						if down then
+							local held = keyDown[vk] or 0
+							local fire = (held==0) or (held>=9 and (held-9)%2==0)
+							keyDown[vk]=held+1
+							if fire then
+								if win._kCapture then
+									local fn=win._kCapture; win._kCapture=nil; pcall(fn,vk)
+								elseif win._iCapture then
+									local el=win._iCapture
+									if vk==0x0D or vk==0x1B then
+										if el._ibg then pcall(function() el._ibg.Color=MatchaUI.Theme.Button end) end
+										win._iCapture=nil
+										if el._itx then el._itx.Text=#el.Value>0 and el.Value or el.Placeholder; el._itx.Color=#el.Value>0 and MatchaUI.Theme.Text or MatchaUI.Theme.Placeholder end
+										if vk==0x0D then pcall(el.Callback, el.Value) end
+									elseif vk==0x08 then
+										el.Value=el.Value:sub(1,-2)
+										if el._id then MatchaUI.Values[el._id]=el.Value end
+									else
+										local ch=VC[vk]
+										if ch then
+											if shiftDn then ch=ch:upper() end
+											el.Value=el.Value..ch
+											if el._id then MatchaUI.Values[el._id]=el.Value end
+										end
+									end
+								end
+							end
+						else
+							keyDown[vk]=nil
+						end
+					end
+				end
+			elseif next(keyDown) then keyDown={} end
+
+			-- input cursor blink + live text
+			if win._iCapture and win._iCapture._itx then
+				local el=win._iCapture
+				local cur = ((frameN//15)%2==0) and "|" or ""
+				if #el.Value>0 then el._itx.Text=el.Value..cur; el._itx.Color=MatchaUI.Theme.Text
+				else el._itx.Text=(cur~="" and cur) or el.Placeholder; el._itx.Color=(cur~="") and MatchaUI.Theme.Text or MatchaUI.Theme.Placeholder end
 			end
 
 			-- tooltip on hover (only when idle, not dragging/clicking)
