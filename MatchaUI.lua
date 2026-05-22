@@ -113,28 +113,71 @@ local function clamp(v,a,b) return math.max(a,math.min(b,v)) end
 local function flr(x) return math.floor(x+.5) end
 
 -- ============================================================
--- Image / icon support (Matcha beta: Drawing.Image)
+-- Image / icon support (Drawing.Image)
+-- Accepts: rbxassetid://ID, bare numeric id, http(s) URL, local file path,
+-- or a Footagesus icon name ("house" or "set:name", default set = lucide).
 -- ============================================================
 local _imgCache = {}
+local _iconSets = {}
+MatchaUI.IconSet = "lucide"
+function MatchaUI:SetIconSet(name) self.IconSet = name or "lucide" end
+-- Lazy-load a name->rbxassetid map from the Footagesus/Icons repo
+local function loadIconSet(setName)
+	if _iconSets[setName]~=nil then return _iconSets[setName] or nil end
+	local set
+	pcall(function()
+		set = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/"..setName.."/dist/Icons.lua"))()
+	end)
+	_iconSets[setName] = set or false
+	return _iconSets[setName] or nil
+end
+local function resolveIcon(name)
+	local setName,iconName = name:match("^([%w_]+):(.+)$")
+	if not setName then setName,iconName = MatchaUI.IconSet, name end
+	local set = loadIconSet(setName)
+	if type(set)=="table" then
+		local v = set[iconName]
+		if type(v)=="string" then return v end
+	end
+	return nil
+end
+-- Fetch raw image bytes for a Roblox asset id (handles Decal->Image indirection)
+local function fetchAssetBytes(id)
+	local data
+	pcall(function() data = game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id="..id) end)
+	if type(data)=="string" and data:find("<roblox",1,true) then
+		local inner = data:match("rbxassetid://(%d+)") or data:match("[?&]id=(%d+)")
+		if inner and inner~=id then pcall(function() data = game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id="..inner) end) end
+	end
+	return data
+end
 local function imgData(src)
 	if not src or src=="" then return nil end
 	if _imgCache[src]~=nil then return _imgCache[src] or nil end
 	local data
-	if type(src)=="string" then
-		if src:match("^https?://") then
-			pcall(function() data = game:HttpGet(src) end)
-		elseif isfile and isfile(src) then
-			pcall(function() data = readfile(src) end)
-		else
-			data = src  -- assume already-raw image bytes
-		end
-	end
+	if src:match("^https?://") then pcall(function() data = game:HttpGet(src) end)
+	elseif isfile and isfile(src) then pcall(function() data = readfile(src) end)
+	else data = src end
 	_imgCache[src] = data or false
 	return data
 end
--- Create a Drawing.Image defensively (property name for the data is uncertain
--- across Matcha builds, so try the common ones).
+-- Create a Drawing.Image. Prefers raw bytes (.Data); falls back to assigning
+-- the rbxassetid string natively if the build resolves content itself.
 local function im(src,x,y,w,h,zi,vis)
+	if type(src)~="string" or src=="" then return nil end
+	local content, bytes
+	local id = src:match("^rbxassetid://(%d+)") or src:match("^rbxasset://(%d+)") or src:match("^(%d+)$")
+	if id then content="rbxassetid://"..id
+	elseif src:match("^https?://") or (isfile and isfile(src)) then bytes=imgData(src)
+	else
+		local rid=resolveIcon(src)
+		if rid then content=rid; id=rid:match("(%d+)") else bytes=imgData(src) end
+	end
+	if id then
+		local key="asset:"..id
+		if _imgCache[key]==nil then _imgCache[key]=fetchAssetBytes(id) or false end
+		bytes = bytes or (_imgCache[key] or nil)
+	end
 	local d
 	local ok=pcall(function() d=Drawing.new("Image") end)
 	if not ok or not d then return nil end
@@ -142,15 +185,16 @@ local function im(src,x,y,w,h,zi,vis)
 	pcall(function() d.Size=Vector2.new(w,h) end)
 	pcall(function() d.ZIndex=zi or 55 end)
 	pcall(function() d.Visible=vis~=false end)
-	local data=imgData(src)
-	if data then
-		local set=false
+	local applied=false
+	if bytes then
 		for _,prop in ipairs({"Data","Image","Bitmap","ImageData"}) do
-			if not set then pcall(function() d[prop]=data; set=true end) end
+			if not applied then pcall(function() d[prop]=bytes; applied=true end) end
 		end
-		if not set then for _,prop in ipairs({"Uri","Url"}) do
-			if not set and type(src)=="string" then pcall(function() d[prop]=src; set=true end) end
-		end end
+	end
+	if not applied and content then
+		for _,prop in ipairs({"Image","Uri","Url","Asset","Content","Data"}) do
+			if not applied then pcall(function() d[prop]=content; applied=true end) end
+		end
 	end
 	return d
 end
@@ -350,6 +394,11 @@ function MatchaUI:CreateWindow(config)
 		if wIco then reg(wIco); local mi=M(wIco); mi.rx=C.P; mi.ry=7; _titleX = C.P+24 end
 	end
 	local wTtx  = reg(tx(win.Title, win.wx+_titleX,win.wy+9, T.Text, C.FLG,FNTB,55))
+	if config.SubTitle then
+		local sx=_titleX + #tostring(win.Title)*8 + 10
+		local wSub=reg(tx(config.SubTitle, win.wx+sx, win.wy+11, T.Placeholder, C.FSM,FNT,55))
+		local ms=M(wSub); ms.rx=sx; ms.ry=11
+	end
 	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, lighten(T.Background,.022),0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,49))
@@ -617,6 +666,7 @@ function MatchaUI:CreateWindow(config)
 
 			local function addEl(e,c)
 				if c and type(c)=="table" and c.Tooltip then e.Tooltip=c.Tooltip end
+				if c and type(c)=="table" and c.Desc then e.Desc=c.Desc end
 				if e._id then win._flags[e._id]=e; MatchaUI.Values[e._id]=e.Value end
 				sec._elements[#sec._elements+1]=e
 				return e
@@ -845,12 +895,15 @@ function MatchaUI:CreateWindow(config)
 					local show=tab._active and not sec._collapsed
 					el._elemVis=show
 					local elH=C.EH
+					local hasDesc = el.Desc~=nil and el.Desc~="" and el.__type~="Slider" and el.__type~="Paragraph"
+					if hasDesc then elH=46 end
+					local titleY = hasDesc and 6 or 9
 					local lblx = (el.Icon and (C.P+22)) or C.P
 					local _thb0=#tab._thbs
 
 					if el.__type=="Toggle" and el._ctype=="Checkbox" then
 						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
-						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
 						local bs=18; local bx=ew-bs-C.P; local by=ecy+(C.EH-bs)//2
 						local box  = rcd(sq(0,0,bs,bs,el.Value and T2.Toggle or T2.Button,4,53,show), bx,by)
 						local tick = rcd(tx("X",0,0,Color3.fromRGB(255,255,255),C.FMD,FNTB,55,show and el.Value), bx+4,by+1)
@@ -861,7 +914,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Toggle" then
 						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
-						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
 						local tw=C.TOW; local th=C.TOH
 						local trkX=ew-tw-C.P; local trkY=ecy+8
 						local trk  = rcd(sq(0,0,tw,th,el.Value and T2.Toggle or T2.Button,th//2,53,show), trkX,trkY)
@@ -913,7 +966,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Dropdown" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
-						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
 						local stx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-92,ecy+9)
 						local arr = rcd(tx("v",0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-18,ecy+10)
 						setOwn({bg,lbl,stx,arr}, show)
@@ -959,7 +1012,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Keybind" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
-						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
 						local kbg = rcd(sq(0,0,62,18,T2.Button,3,52,show), ew-70,ecy+7)
 						local ktx = rcd(tx("["..el.Value.."]",0,0,T2.Text,C.FSM,FNT,55,show), ew-66,ecy+9)
 						setOwn({bg,lbl,kbg,ktx}, show)
@@ -975,7 +1028,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Input" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
-						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
 						local ibg = rcd(sq(0,0,126,20,T2.Button,3,52,show), ew-134,ecy+6)
 						local dt  = #el.Value>0 and el.Value or el.Placeholder
 						local itx = rcd(tx(dt,0,0, #el.Value>0 and T2.Text or T2.Placeholder,C.FSM,FNT,55,show), ew-130,ecy+9)
@@ -992,7 +1045,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Colorpicker" then
 						local bg   = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
-						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local lbl  = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
 						local pbrd = rcd(sq(0,0,32,20,T2.Placeholder,3,52,show), ew-39,ecy+6)
 						local prev = rcd(sq(0,0,28,16,el.Value,3,53,show), ew-37,ecy+8)
 						setOwn({bg,lbl,pbrd,prev}, show)
@@ -1062,7 +1115,7 @@ function MatchaUI:CreateWindow(config)
 
 					elseif el.__type=="Label" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
-						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+9)
+						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
 						local vtx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-150,ecy+9)
 						setOwn({bg,lbl,vtx}, show)
 						el._drawings={bg,lbl,vtx}; el._vtx=vtx
@@ -1095,6 +1148,10 @@ function MatchaUI:CreateWindow(config)
 						if ic then rcd(ic, C.P, ecy+(C.EH-isz)//2); local imm=M(ic); imm.own=show; imm.elemVis=show; table.insert(el._drawings, ic) end
 					end
 					if el.Tooltip then for hi=_thb0+1,#tab._thbs do if not tab._thbs[hi]._tip then tab._thbs[hi]._tip=el.Tooltip end end end
+					if hasDesc and el._drawings then
+						local _ds=rcd(tx(el.Desc,0,0,MatchaUI.Theme.Placeholder,C.FSM,FNT,54,show), lblx,ecy+24)
+						local _dm=M(_ds); _dm.own=show; _dm.elemVis=show; table.insert(el._drawings,_ds)
+					end
 					for _,_d in ipairs(el._drawings or {}) do local _m=M(_d); _m.rowTop=ecy; _m.rowH=elH end
 					cy=cy+elH+7
 				end  -- elements
