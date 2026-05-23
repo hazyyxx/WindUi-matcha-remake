@@ -436,8 +436,8 @@ function MatchaUI:CreateWindow(config)
 	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, lighten(T.Background,.022),0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
-	-- bottom mask: hides content sliding off the bottom edge (mirror of the title bar)
-	local BOTPAD=16
+	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
+	local BOTPAD=4
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
@@ -657,44 +657,26 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			-- Title bar (z=60) masks [winTop..vTop]; bottom mask (z=60) masks [maskTop..winBot].
-			-- Content draws under both, so it slides cleanly off either edge.
-			local winTop=win.wy; local vTop=oy; local winBot=win.wy+WH; local maskTop=winBot-BOTPAD
-			local smooth = win._clipMode~="fast"
+			-- Row-fit clipping: a drawing shows only if its WHOLE row fits inside the
+			-- content viewport. No partial rows -> never half-cut text and never spills
+			-- off the window. (Drawing text can't be pixel-clipped, so this is the clean way.)
+			local vTop=oy; local vBot=win.wy+WH-BOTPAD
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
 				if m and m.crx ~= nil then
 					local ax=ox+C.P+m.crx
 					local ay=oy+m.cry-sy
-					local vis = tab._active and m.elemVis~=false
-					if m.crx2~=nil then
-						-- Line: position via From/To; hide if outside the visible band
+					if m.crx2~=nil then  -- Line
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
-						if m.own then d.Visible = vis and ay>=vTop and ay<=maskTop end
-					elseif m.oh and not m.isImg then
-						-- Square: clip to window bounds; chrome masks the parts above vTop / below maskTop
-						local top,bot = ay, ay+m.oh
-						if not vis or bot<=winTop or top>=winBot then
-							if m.own then d.Visible=false end
-							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-						elseif smooth then
-							local nt=math.max(top,winTop); local nb=math.min(bot,winBot)
-							d.Position=Vector2.new(flr(ax+.5),flr(nt+.5))
-							pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(nb-nt+.5))) end)
-							if m.own then d.Visible=true end
-						else
-							-- fast mode: whole-row hide unless fully inside the viewport
-							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-							pcall(function() d.Size=Vector2.new(d.Size.X, m.oh) end)
-							if m.own then d.Visible = (top>=vTop and bot<=maskTop) end
-						end
 					else
-						-- Text / Circle / Image: show while the TOP anchor is in the visible band.
-						-- Title bar masks above vTop, bottom mask masks below maskTop -> smooth both ends.
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-						local topE = m.isCircle and (ay-(m.dh or 12)/2) or ay
-						if m.own then d.Visible = vis and topE>=winTop and topE<=maskTop end
+						if m.oh then pcall(function() if d.Size.Y~=m.oh then d.Size=Vector2.new(d.Size.X, m.oh) end end) end
+					end
+					if m.own then
+						local rt = oy + (m.rowTop or m.cry) - sy
+						local rh = m.rowH or m.oh or 16
+						d.Visible = (tab._active and m.elemVis~=false) and rt>=vTop-1 and (rt+rh)<=vBot+1
 					end
 				end
 			end
