@@ -937,6 +937,7 @@ function MatchaUI:CreateWindow(config)
 			local function addEl(e,c)
 				if c and type(c)=="table" and c.Tooltip then e.Tooltip=c.Tooltip end
 				if c and type(c)=="table" and c.Desc then e.Desc=c.Desc end
+				if c and type(c)=="table" and c.Icon then e.Icon=c.Icon end
 				if e._id then win._flags[e._id]=e; MatchaUI.Values[e._id]=e.Value end
 				sec._elements[#sec._elements+1]=e
 				return e
