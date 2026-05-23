@@ -1239,16 +1239,17 @@ function MatchaUI:CreateWindow(config)
 						el._drawings={bg,lbl,stx}; el._stx=stx
 					elseif el.__type=="InfoBox" then
 						local n=#el.Lines
-						local titleH=(el.Title~="" and 22 or 4)
-						elH=titleH+n*16+8
+						local LH=15
+						local titleH=(el.Title~="" and 20 or 0)
+						elH=titleH+n*LH+10
 						local bg=rcd(sq(0,0,ew,elH,T2.Element,6,50,show), 0,ecy)
 						local list={bg}
-						local yy=ecy+6
+						local yy=ecy+5
 						if el.Title~="" then local tt=rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNTB,54,show), C.P,yy); list[#list+1]=tt; yy=yy+titleH end
 						el._lineTx={}
 						for i=1,n do
 							local lt=rcd(tx(tostring(el.Lines[i] or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), C.P,yy)
-							el._lineTx[i]=lt; list[#list+1]=lt; yy=yy+16
+							el._lineTx[i]=lt; list[#list+1]=lt; yy=yy+LH
 						end
 						setOwn(list, show)
 						el._drawings=list
@@ -1445,7 +1446,7 @@ function MatchaUI:CreateWindow(config)
 		win._homeAdded=true
 		local t=win:Tab({Title="Home", Icon="home"})
 		local s2=t:Section({Title="Debug Info"})
-		win._infoBox = s2:InfoBox({ Title="Client", Lines={"","","","","","","",""} })
+		win._infoBox = s2:InfoBox({ Title="", Lines={"","","","","","","",""} })
 		local ss=t:Section({Title="Supported Games"})
 		pcall(function() ss:StatusList({}) end)
 		win._startTime = win._startTime or tick()
