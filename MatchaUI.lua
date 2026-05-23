@@ -417,37 +417,37 @@ function MatchaUI:CreateWindow(config)
 	end
 
 	-- ---- window chrome ----
-	local wBrd  = reg(sq(win.wx-1,win.wy-1,WW+2,WH+2, darken(T.Background,.5), C.CRN+1,48))
-	local wBg   = reg(sq(win.wx,win.wy,WW,WH, T.Background, C.CRN,50))
-	local wBar  = reg(sq(win.wx,win.wy,WW,C.TH, T.Background, C.CRN,51))
-	local wBarB = reg(sq(win.wx,win.wy+C.TH-4,WW,8, T.Background,0,51))  -- cover rounded bottom of bar
-	local wTbSep = reg(sq(win.wx,win.wy+C.TH-1,WW,1, lighten(T.Background,.10),0,52))
+	local wBrd  = reg(sq(win.wx-1,win.wy-1,WW+2,WH+2, darken(T.Background,.5), C.CRN+1,40))
+	local wBg   = reg(sq(win.wx,win.wy,WW,WH, T.Background, C.CRN,42))
+	local wBar  = reg(sq(win.wx,win.wy,WW,C.TH, T.Background, C.CRN,60))
+	local wBarB = reg(sq(win.wx,win.wy+C.TH-4,WW,8, T.Background,0,60))  -- cover rounded bottom of bar
+	local wTbSep = reg(sq(win.wx,win.wy+C.TH-1,WW,1, lighten(T.Background,.10),0,61))
 	local _titleX = C.P+2
 	if config.Icon then
-		local wIco = im(config.Icon, win.wx+C.P, win.wy+7, 18,18, 56, true)
+		local wIco = im(config.Icon, win.wx+C.P, win.wy+7, 18,18, 62, true)
 		if wIco then reg(wIco); local mi=M(wIco); mi.rx=C.P; mi.ry=7; _titleX = C.P+24 end
 	end
-	local wTtx  = reg(tx(win.Title, win.wx+_titleX,win.wy+9, T.Text, C.FLG,FNTB,55))
+	local wTtx  = reg(tx(win.Title, win.wx+_titleX,win.wy+9, T.Text, C.FLG,FNTB,62))
 	if config.SubTitle then
 		local sx=_titleX + #tostring(win.Title)*8 + 10
-		local wSub=reg(tx(config.SubTitle, win.wx+sx, win.wy+11, T.Placeholder, C.FSM,FNT,55))
+		local wSub=reg(tx(config.SubTitle, win.wx+sx, win.wy+11, T.Placeholder, C.FSM,FNT,62))
 		local ms=M(wSub); ms.rx=sx; ms.ry=11
 	end
 	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, lighten(T.Background,.022),0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
-	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,49))
+	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
-	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,60,false))
+	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
 	-- tooltip (positioned dynamically at cursor)
 	local wTipBg = reg(sq(0,0,10,18, darken(T.Dialog,.25),4,95,false))
 	local wTipTx = reg(tx("",0,0, T.Text, C.FSM,FNT,96,false))
 	-- close & minimize
 	local cX,cY = win.wx+WW-28,win.wy+7
 	local mX,mY = win.wx+WW-52,win.wy+7
-	local wClBg = reg(sq(cX,cY,20,18,Color3.fromRGB(180,40,40),3,56))
-	local wClTx = reg(tx("x",cX+6,cY+2,Color3.fromRGB(255,255,255),C.FLG,FNTB,58))
-	local wMnBg = reg(sq(mX,mY,20,18,lighten(T.Background,.10),4,56))
-	local wMnTx = reg(tx("-",mX+7,mY+1,T.Text,C.FLG,FNTB,58))
+	local wClBg = reg(sq(cX,cY,20,18,Color3.fromRGB(180,40,40),3,62))
+	local wClTx = reg(tx("x",cX+6,cY+2,Color3.fromRGB(255,255,255),C.FLG,FNTB,64))
+	local wMnBg = reg(sq(mX,mY,20,18,lighten(T.Background,.10),4,62))
+	local wMnTx = reg(tx("-",mX+7,mY+1,T.Text,C.FLG,FNTB,64))
 
 	-- ---- position refresh ----
 	-- Each drawing carries _rx,_ry (relative offsets from wx,wy).
@@ -654,7 +654,8 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			local vTop=oy; local vBot=win.wy+WH-1     -- content viewport (under title bar .. window bottom)
+			-- Title bar (z=60) masks the strip [winTop .. vTop]; content draws below it.
+			local winTop=win.wy; local vTop=oy; local vBot=win.wy+WH-1
 			local smooth = win._clipMode~="fast"
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
@@ -663,34 +664,36 @@ function MatchaUI:CreateWindow(config)
 					local ay=oy+m.cry-sy
 					local vis = tab._active and m.elemVis~=false
 					if m.crx2~=nil then
-						-- Line: position via From/To; hide if its row is outside
+						-- Line: position via From/To; hide if outside the window
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
 						if m.own then d.Visible = vis and ay>=vTop and ay<=vBot end
 					elseif m.oh and not m.isImg then
-						-- Square: clip its height to the viewport (true cut-off)
+						-- Square: clip to window bounds; the title bar masks the part above vTop
 						local top,bot = ay, ay+m.oh
-						if not vis or bot<=vTop or top>=vBot then
+						if not vis or bot<=winTop or top>=vBot then
 							if m.own then d.Visible=false end
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						elseif smooth then
-							local nt=math.max(top,vTop); local nb=math.min(bot,vBot)
+							local nt=math.max(top,winTop); local nb=math.min(bot,vBot)
 							d.Position=Vector2.new(flr(ax+.5),flr(nt+.5))
 							pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(nb-nt+.5))) end)
 							if m.own then d.Visible=true end
 						else
-							-- fast mode: whole-row hide if it doesn't fully fit
+							-- fast mode: whole-row hide unless fully inside the viewport
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 							pcall(function() d.Size=Vector2.new(d.Size.X, m.oh) end)
 							if m.own then d.Visible = (top>=vTop and bot<=vBot) end
 						end
 					else
-						-- Text / Circle / Image: position; hide if any part leaves the viewport (no clip-over)
+						-- Text / Circle / Image: position; show while inside window bounds.
+						-- Above vTop the title bar masks it (smooth scroll); below vBot it would
+						-- spill onto the game, so hide there.
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						local topE,botE
 						if m.isCircle then local r=(m.dh or 12)/2; topE=ay-r; botE=ay+r
 						else topE=ay; botE=ay+(m.isImg and (m.oh or 16) or (m.dh or 14)) end
-						if m.own then d.Visible = vis and topE>=vTop and botE<=vBot+1 end
+						if m.own then d.Visible = vis and topE>=winTop and botE<=vBot+1 end
 					end
 				end
 			end
