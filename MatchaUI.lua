@@ -1445,8 +1445,8 @@ function MatchaUI:CreateWindow(config)
 		if win._homeAdded then return end
 		win._homeAdded=true
 		local t=win:Tab({Title="Home", Icon="home"})
-		local s2=t:Section({Title="Debug Info"})
-		win._infoBox = s2:InfoBox({ Title="", Lines={"","","","","","","",""} })
+		local s2=t:Section({Title=""})
+		win._infoBox = s2:InfoBox({ Title="Client Info", Lines={"","","","","","","",""} })
 		local ss=t:Section({Title="Supported Games"})
 		pcall(function() ss:StatusList({}) end)
 		win._startTime = win._startTime or tick()
