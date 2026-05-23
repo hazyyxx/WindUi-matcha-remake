@@ -631,7 +631,12 @@ function MatchaUI:CreateWindow(config)
 		-- register content drawing: stores relative offset within content area
 		local function rcd(d, cx,cy, opts)
 			local m=M(d); m.crx=cx; m.cry=cy; m.own=true  -- relative to content area origin
-			pcall(function() local sz=d.Size; if sz and sz.Y then m.oh=sz.Y end end)  -- square height for geometric clip
+			pcall(function()
+				local sz=d.Size
+				if type(sz)=="number" then m.dh=sz                 -- Text (font px height)
+				elseif sz and sz.Y then m.oh=sz.Y end              -- Square/Image (Vector2)
+			end)
+			pcall(function() if d.Radius then m.dh=d.Radius*2; m.isCircle=true end end)  -- Circle (center-anchored)
 			if opts then for k,v in pairs(opts) do m[k]=v end end
 			tab._tdraws[#tab._tdraws+1]=d
 			win._all[#win._all+1]=d
@@ -656,7 +661,7 @@ function MatchaUI:CreateWindow(config)
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
 						if m.own then d.Visible = vis and ay>=vTop and ay<=vBot end
-					elseif m.oh then
+					elseif m.oh and not m.isImg then
 						-- Square: clip its height to the viewport (true cut-off)
 						local top,bot = ay, ay+m.oh
 						if not vis or bot<=vTop or top>=vBot then
@@ -674,9 +679,12 @@ function MatchaUI:CreateWindow(config)
 							if m.own then d.Visible = (top>=vTop and bot<=vBot) end
 						end
 					else
-						-- Text / Circle / Image: position; hide when the anchor leaves the viewport
+						-- Text / Circle / Image: position; hide if any part leaves the viewport (no clip-over)
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-						if m.own then d.Visible = vis and ay>=vTop-1 and ay<=vBot-2 end
+						local topE,botE
+						if m.isCircle then local r=(m.dh or 12)/2; topE=ay-r; botE=ay+r
+						else topE=ay; botE=ay+(m.isImg and (m.oh or 16) or (m.dh or 14)) end
+						if m.own then d.Visible = vis and topE>=vTop and botE<=vBot+1 end
 					end
 				end
 			end
@@ -1255,7 +1263,7 @@ function MatchaUI:CreateWindow(config)
 					if el.Icon and el._drawings then
 						local isz=16
 						local ic=im(el.Icon,0,0,isz,isz,56,show)
-						if ic then rcd(ic, C.P, ecy+(C.EH-isz)//2); local imm=M(ic); imm.own=show; imm.elemVis=show; table.insert(el._drawings, ic) end
+						if ic then rcd(ic, C.P, ecy+(C.EH-isz)//2); local imm=M(ic); imm.own=show; imm.elemVis=show; imm.isImg=true; imm.oh=isz; table.insert(el._drawings, ic) end
 					end
 					if el.Tooltip then for hi=_thb0+1,#tab._thbs do if not tab._thbs[hi]._tip then tab._thbs[hi]._tip=el.Tooltip end end end
 					if hasDesc and el._drawings then
