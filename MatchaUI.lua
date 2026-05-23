@@ -436,6 +436,9 @@ function MatchaUI:CreateWindow(config)
 	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, lighten(T.Background,.022),0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
+	-- bottom mask: hides content sliding off the bottom edge (mirror of the title bar)
+	local BOTPAD=16
+	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
 	-- tooltip (positioned dynamically at cursor)
@@ -458,7 +461,7 @@ function MatchaUI:CreateWindow(config)
 	end
 	setRel(wBrd,-1,-1); setRel(wBg,0,0); setRel(wBar,0,0); setRel(wBarB,0,C.TH-4); setRel(wTbSep,0,C.TH-1)
 	setRel(wTtx,_titleX,9); setRel(wSide,0,C.TH); setRel(wSLn,C.SW,C.TH,C.SW,WH)
-	setRel(wCont,C.SW+1,C.TH); setRel(wClBg,WW-28,7); setRel(wClTx,WW-23,9)
+	setRel(wCont,C.SW+1,C.TH); setRel(wBotMask,C.SW+1,WH-BOTPAD); setRel(wClBg,WW-28,7); setRel(wClTx,WW-23,9)
 	setRel(wMnBg,WW-52,7); setRel(wMnTx,WW-48,10)
 
 	local function refreshChrome()
@@ -516,7 +519,7 @@ function MatchaUI:CreateWindow(config)
 		local show = not win._minimized
 		wBg.Size   = show and Vector2.new(WW,WH) or Vector2.new(WW,C.TH)
 		wBrd.Size  = show and Vector2.new(WW+2,WH+2) or Vector2.new(WW+2,C.TH+2)
-		wSide.Visible=show; wSLn.Visible=show; wCont.Visible=show
+		wSide.Visible=show; wSLn.Visible=show; wCont.Visible=show; wBotMask.Visible=show
 		for _,t in ipairs(win._tabs) do
 			if t._btn then t._btn.Visible=show end
 			if t._btx then t._btx.Visible=show end
@@ -654,8 +657,9 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			-- Title bar (z=60) masks the strip [winTop .. vTop]; content draws below it.
-			local winTop=win.wy; local vTop=oy; local vBot=win.wy+WH-1
+			-- Title bar (z=60) masks [winTop..vTop]; bottom mask (z=60) masks [maskTop..winBot].
+			-- Content draws under both, so it slides cleanly off either edge.
+			local winTop=win.wy; local vTop=oy; local winBot=win.wy+WH; local maskTop=winBot-BOTPAD
 			local smooth = win._clipMode~="fast"
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
@@ -664,18 +668,18 @@ function MatchaUI:CreateWindow(config)
 					local ay=oy+m.cry-sy
 					local vis = tab._active and m.elemVis~=false
 					if m.crx2~=nil then
-						-- Line: position via From/To; hide if outside the window
+						-- Line: position via From/To; hide if outside the visible band
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
-						if m.own then d.Visible = vis and ay>=vTop and ay<=vBot end
+						if m.own then d.Visible = vis and ay>=vTop and ay<=maskTop end
 					elseif m.oh and not m.isImg then
-						-- Square: clip to window bounds; the title bar masks the part above vTop
+						-- Square: clip to window bounds; chrome masks the parts above vTop / below maskTop
 						local top,bot = ay, ay+m.oh
-						if not vis or bot<=winTop or top>=vBot then
+						if not vis or bot<=winTop or top>=winBot then
 							if m.own then d.Visible=false end
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						elseif smooth then
-							local nt=math.max(top,winTop); local nb=math.min(bot,vBot)
+							local nt=math.max(top,winTop); local nb=math.min(bot,winBot)
 							d.Position=Vector2.new(flr(ax+.5),flr(nt+.5))
 							pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(nb-nt+.5))) end)
 							if m.own then d.Visible=true end
@@ -683,17 +687,14 @@ function MatchaUI:CreateWindow(config)
 							-- fast mode: whole-row hide unless fully inside the viewport
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 							pcall(function() d.Size=Vector2.new(d.Size.X, m.oh) end)
-							if m.own then d.Visible = (top>=vTop and bot<=vBot) end
+							if m.own then d.Visible = (top>=vTop and bot<=maskTop) end
 						end
 					else
-						-- Text / Circle / Image: position; show while inside window bounds.
-						-- Above vTop the title bar masks it (smooth scroll); below vBot it would
-						-- spill onto the game, so hide there.
+						-- Text / Circle / Image: show while the TOP anchor is in the visible band.
+						-- Title bar masks above vTop, bottom mask masks below maskTop -> smooth both ends.
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-						local topE,botE
-						if m.isCircle then local r=(m.dh or 12)/2; topE=ay-r; botE=ay+r
-						else topE=ay; botE=ay+(m.isImg and (m.oh or 16) or (m.dh or 14)) end
-						if m.own then d.Visible = vis and topE>=winTop and botE<=vBot+1 end
+						local topE = m.isCircle and (ay-(m.dh or 12)/2) or ay
+						if m.own then d.Visible = vis and topE>=winTop and topE<=maskTop end
 					end
 				end
 			end
@@ -1325,7 +1326,7 @@ function MatchaUI:CreateWindow(config)
 		pcall(function()
 			wBrd.Color=darken(T2.Background,.5); wBg.Color=T2.Background
 			wBar.Color=T2.Background; wBarB.Color=T2.Background; wTtx.Color=T2.Text; wTbSep.Color=lighten(T2.Background,.10)
-			wSide.Color=lighten(T2.Background,.022); wSLn.Color=lighten(T2.Background,.07); wCont.Color=T2.Background
+			wSide.Color=lighten(T2.Background,.022); wSLn.Color=lighten(T2.Background,.07); wCont.Color=T2.Background; wBotMask.Color=T2.Background
 			wMnBg.Color=lighten(T2.Background,.10); wMnTx.Color=T2.Text
 			wSbThumb.Color=lighten(T2.Background,.12); wTipBg.Color=lighten(T2.Background,.06); wTipTx.Color=T2.Text
 		end)
@@ -1385,7 +1386,7 @@ function MatchaUI:CreateWindow(config)
 		pcall(function()
 			wBrd.Size=Vector2.new(WW+2,WH+2); wBg.Size=Vector2.new(WW,WH)
 			wBar.Size=Vector2.new(WW,C.TH); wBarB.Size=Vector2.new(WW,8); wTbSep.Size=Vector2.new(WW,1)
-			wSide.Size=Vector2.new(C.SW,WH-C.TH); wCont.Size=Vector2.new(WW-C.SW-1,WH-C.TH)
+			wSide.Size=Vector2.new(C.SW,WH-C.TH); wCont.Size=Vector2.new(WW-C.SW-1,WH-C.TH); wBotMask.Size=Vector2.new(WW-C.SW-1,BOTPAD); M(wBotMask).ry=WH-BOTPAD
 		end)
 		local ml=M(wSLn); ml.ry2=WH
 		M(wClBg).rx=WW-28; M(wClTx).rx=WW-23; M(wMnBg).rx=WW-52; M(wMnTx).rx=WW-48
