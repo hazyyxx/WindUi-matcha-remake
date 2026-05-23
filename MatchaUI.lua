@@ -521,6 +521,7 @@ function MatchaUI:CreateWindow(config)
 			if t._btn then t._btn.Visible=show end
 			if t._btx then t._btx.Visible=show end
 			if t._bico then t._bico.Visible=show end
+			if t._abar then t._abar.Visible=(show and t._active) end
 		end
 		if win._active then win._active:_setAllVis(show) end
 		win:_updateScrollbar()
@@ -547,6 +548,9 @@ function MatchaUI:CreateWindow(config)
 		local relY=(idx-1)*(C.TBH+2)+C.TH+C.TBP
 		local btn=reg(sq(win.wx+C.TBP,by,C.SW-C.TBP*2,C.TBH, lighten(T2.Background,.022),6,52))
 		setRel(btn,C.TBP,relY)
+		-- active-tab accent indicator bar (hidden until active)
+		local abar=reg(sq(win.wx+C.TBP, by+5, 3, C.TBH-10, T2.Slider, 2, 54, false))
+		setRel(abar,C.TBP,relY+5)
 		local txX=C.P+6; local ico
 		if icon then
 			ico=im(icon, win.wx+C.P+4, by+(C.TBH-15)//2, 15,15, 54, true)
@@ -554,7 +558,7 @@ function MatchaUI:CreateWindow(config)
 		end
 		local btx=reg(tx(title,win.wx+txX,by+6, T2.Placeholder,C.FSM,FNT,54))
 		setRel(btx,txX,relY+6)
-		return btn,btx,ico
+		return btn,btx,ico,abar
 	end
 
 	-- ============================================================
@@ -568,7 +572,7 @@ function MatchaUI:CreateWindow(config)
 		win._tabs[#win._tabs+1]=tab
 
 		local ticon = type(cfg2)=="table" and cfg2.Icon or nil
-		tab._btn, tab._btx, tab._bico = makeTabBtn(idx, ttl, ticon)
+		tab._btn, tab._btx, tab._bico, tab._abar = makeTabBtn(idx, ttl, ticon)
 
 		-- tab hitbox (sidebar button)
 		local function tHbCoords()
@@ -611,6 +615,7 @@ function MatchaUI:CreateWindow(config)
 			tab._active=false
 			tab._btn.Color=lighten(MatchaUI.Theme.Background,.022)
 			tab._btx.Color=MatchaUI.Theme.Placeholder
+			if tab._abar then tab._abar.Visible=false end
 			tab:_closePopups()
 			tab:_setAllVis(false)
 		end
@@ -619,6 +624,7 @@ function MatchaUI:CreateWindow(config)
 			tab._active=true
 			tab._btn.Color=lighten(MatchaUI.Theme.Background,.10)
 			tab._btx.Color=MatchaUI.Theme.Text
+			if tab._abar and not win._hidden then tab._abar.Visible=true end
 			tab:_setAllVis(true)
 		end
 
@@ -1287,6 +1293,7 @@ function MatchaUI:CreateWindow(config)
 		if idx==1 then
 			win._active=tab; tab._active=true
 			tab._btn.Color=lighten(T.Background,.10); tab._btx.Color=T.Text
+			if tab._abar then tab._abar.Visible=true end
 			task.spawn(function() task.wait(); tab:_build() end)
 		end
 
@@ -1313,14 +1320,14 @@ function MatchaUI:CreateWindow(config)
 		local T2=MatchaUI.Theme
 		pcall(function()
 			wBrd.Color=darken(T2.Background,.5); wBg.Color=T2.Background
-			wBar.Color=T2.Accent; wBarB.Color=T2.Accent; wTtx.Color=T2.Text
-			wSide.Color=T2.Dialog; wSLn.Color=darken(T2.Dialog,.35); wCont.Color=T2.Background
-			wMnBg.Color=darken(T2.Accent,.4); wMnTx.Color=T2.Text
-			wSbThumb.Color=lighten(T2.Dialog,.25); wTipBg.Color=darken(T2.Dialog,.25); wTipTx.Color=T2.Text
+			wBar.Color=T2.Background; wBarB.Color=T2.Background; wTtx.Color=T2.Text; wTbSep.Color=lighten(T2.Background,.10)
+			wSide.Color=lighten(T2.Background,.022); wSLn.Color=lighten(T2.Background,.07); wCont.Color=T2.Background
+			wMnBg.Color=lighten(T2.Background,.10); wMnTx.Color=T2.Text
+			wSbThumb.Color=lighten(T2.Background,.12); wTipBg.Color=lighten(T2.Background,.06); wTipTx.Color=T2.Text
 		end)
 		for _,t in ipairs(win._tabs) do
-			if t._active then pcall(function() t._btn.Color=lighten(T2.Background,.10); t._btx.Color=T2.Text end)
-			else pcall(function() t._btn.Color=lighten(T2.Background,.022); t._btx.Color=T2.Placeholder end) end
+			if t._active then pcall(function() t._btn.Color=lighten(T2.Background,.10); t._btx.Color=T2.Text; if t._abar then t._abar.Color=T2.Slider; t._abar.Visible=not win._hidden end end)
+			else pcall(function() t._btn.Color=lighten(T2.Background,.022); t._btx.Color=T2.Placeholder; if t._abar then t._abar.Color=T2.Slider; t._abar.Visible=false end end) end
 		end
 		-- rebuild content drawings (they carry baked-in colors)
 		local contentSet={}
