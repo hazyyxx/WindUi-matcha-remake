@@ -401,6 +401,7 @@ function MatchaUI:CreateWindow(config)
 		_flags={},          -- flag→elem registry
 		_keybinds={},       -- set of keybind elements to poll
 		_hidden=false,      -- whole-UI visibility
+		_clipMode=(config.ClipMode or "smooth"),  -- "smooth" = geometric cut-off, "fast" = row hide
 		_toggleKey=(KV[config.ToggleKey] or KV["RShift"] or 0xA1),  -- menu show/hide key (VK)
 		_kCapture=nil,      -- keybind capture callback
 		_iCapture=nil,      -- input capture elem
@@ -630,6 +631,7 @@ function MatchaUI:CreateWindow(config)
 		-- register content drawing: stores relative offset within content area
 		local function rcd(d, cx,cy, opts)
 			local m=M(d); m.crx=cx; m.cry=cy; m.own=true  -- relative to content area origin
+			pcall(function() local sz=d.Size; if sz and sz.Y then m.oh=sz.Y end end)  -- square height for geometric clip
 			if opts then for k,v in pairs(opts) do m[k]=v end end
 			tab._tdraws[#tab._tdraws+1]=d
 			win._all[#win._all+1]=d
@@ -641,25 +643,40 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			local clipT=oy; local clipB=oy+WH-C.TH-2
+			local vTop=oy; local vBot=win.wy+WH-1     -- content viewport (under title bar .. window bottom)
+			local smooth = win._clipMode~="fast"
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
 				if m and m.crx ~= nil then
 					local ax=ox+C.P+m.crx
 					local ay=oy+m.cry-sy
-					if m.crx2~=nil then  -- Line: use From/To, never Position
+					local vis = tab._active and m.elemVis~=false
+					if m.crx2~=nil then
+						-- Line: position via From/To; hide if its row is outside
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
-					else
-						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-					end
-					if m.own then
-						if m.rowTop then
-							local rt=oy+m.rowTop-sy
-							d.Visible = tab._active and m.elemVis~=false and rt>=clipT-1 and (rt+(m.rowH or 0))<=clipB+2
+						if m.own then d.Visible = vis and ay>=vTop and ay<=vBot end
+					elseif m.oh then
+						-- Square: clip its height to the viewport (true cut-off)
+						local top,bot = ay, ay+m.oh
+						if not vis or bot<=vTop or top>=vBot then
+							if m.own then d.Visible=false end
+							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
+						elseif smooth then
+							local nt=math.max(top,vTop); local nb=math.min(bot,vBot)
+							d.Position=Vector2.new(flr(ax+.5),flr(nt+.5))
+							pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(nb-nt+.5))) end)
+							if m.own then d.Visible=true end
 						else
-							d.Visible = tab._active and m.elemVis~=false and (ay>=clipT and ay<clipB)
+							-- fast mode: whole-row hide if it doesn't fully fit
+							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
+							pcall(function() d.Size=Vector2.new(d.Size.X, m.oh) end)
+							if m.own then d.Visible = (top>=vTop and bot<=vBot) end
 						end
+					else
+						-- Text / Circle / Image: position; hide when the anchor leaves the viewport
+						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
+						if m.own then d.Visible = vis and ay>=vTop-1 and ay<=vBot-2 end
 					end
 				end
 			end
@@ -1376,6 +1393,10 @@ function MatchaUI:CreateWindow(config)
 			Callback=function(v) local sz=sizeMap[v]; if sz then win:Resize(sz[1],sz[2]) end end})
 		s:Keybind({Title="Menu Toggle Key", Desc="Show / hide this menu", Value=(VK[win._toggleKey] or "RShift"),
 			Callback=function(k) win:SetToggleKey(k) end})
+		s:Dropdown({Title="Edge Clipping", Flag="_clipmode", Desc="Smooth = perfect cut-off, Fast = better FPS",
+			Values={"Smooth","Fast"}, Value=(win._clipMode=="fast" and "Fast" or "Smooth"),
+			Callback=function(v) win._clipMode=(v=="Fast" and "fast" or "smooth")
+				if win._active then pcall(function() win._active:_refreshContentPos() end) end end})
 		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
 
 		-- Configuration (save / load element states)
