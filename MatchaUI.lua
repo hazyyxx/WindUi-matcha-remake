@@ -142,7 +142,7 @@ end
 -- Optional: host your own icon PNGs and point names at them:
 --   MatchaUI.IconBaseUrl = "https://raw.githubusercontent.com/you/icons/main/"
 --   then Icon="house" -> that base .. "house" .. IconExt (default ".png")
-MatchaUI.IconBaseUrl = nil
+MatchaUI.IconBaseUrl = "https://raw.githubusercontent.com/hazyyxx/WindUi-matcha-remake/main/icons/"
 MatchaUI.IconExt = ".png"
 -- Remote game-status JSON (edit this file in your own repo to control statuses).
 -- Format: { "Blade Ball": "working", "Fallen Survival": "dev", "Old Game": false }
