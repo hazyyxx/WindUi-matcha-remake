@@ -654,7 +654,7 @@ function MatchaUI:CreateWindow(config)
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
-	local BOTPAD=16  -- bottom margin: a partial line/icon overflowing past the bottom cutoff stays within this band (inside the window)
+	local BOTPAD=4   -- thin bottom cap (covers the rounded-corner edge below the content cutoff)
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
@@ -896,8 +896,8 @@ function MatchaUI:CreateWindow(config)
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
-							local top=math.min(ay,ay2)
-							d.Visible = vis and top>=vTop-1 and top<vBot
+							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
+							d.Visible = vis and top>=vTop-1 and bot<=vBot+1
 						end
 					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
 						local top=ay; local bot=ay+m.oh
@@ -918,10 +918,11 @@ function MatchaUI:CreateWindow(config)
 					else  -- Text / Circle / vector Icon -> visible while their TOP is within the bars
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
-							local top
-							if m.isCircle then top=ay-(m.dh or 0)/2
-							else top=ay end
-							d.Visible = vis and top>=vTop-1 and top<vBot
+							local top,bot
+							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
+							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
+							else top=ay; bot=ay+(m.dh or 14) end
+							d.Visible = vis and top>=vTop-1 and bot<=vBot+1
 						end
 					end
 				end
@@ -1593,6 +1594,10 @@ function MatchaUI:CreateWindow(config)
 		for _,d in ipairs(win._all) do
 			local m=META[d]
 			if not (m and m.crx) then pcall(function() d.Visible=true end) end
+		end
+		-- only the active tab keeps its accent bar; the blanket show above lit them all
+		for _,t in ipairs(win._tabs) do
+			if t._abar then pcall(function() t._abar.Visible=(t==win._active) end) end
 		end
 		pcall(function() wSbThumb.Visible=false end)
 		pcall(function() wTipBg.Visible=false; wTipTx.Visible=false end)
