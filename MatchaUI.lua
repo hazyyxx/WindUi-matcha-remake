@@ -654,7 +654,7 @@ function MatchaUI:CreateWindow(config)
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
-	local BOTPAD=4   -- thin bottom cap (covers the rounded-corner edge below the content cutoff)
+	local BOTPAD=10  -- bottom cap; masks the lower half of a line sliding off the bottom (center-cull keeps overflow within this band)
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
@@ -878,11 +878,10 @@ function MatchaUI:CreateWindow(config)
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
 			-- Cutoff: squares (element / InfoBox backgrounds) are pixel-clipped by
 			-- resizing so their edges sit cleanly on the viewport bounds. Text / lines /
-			-- circles / icons can't be resized or masked (Matcha draws them above every
-			-- square regardless of ZIndex), so they stay visible while they intersect the
-			-- viewport and vanish only once fully past a bar. The bars (title bar above,
-			-- bottom cap below) sit at the content edges and the BOTPAD margin keeps any
-			-- partial-line overflow INSIDE the window -- it never spills past the GUI.
+			-- circles / icons can't be resized, so they're culled by their CENTER: a line
+			-- stays visible while its midpoint is inside the content bounds, so it slides
+			-- under the title bar (top) / bottom cap (bottom) -- which mask the crossed
+			-- half -- and vanishes once half past, before it can reach outside the GUI.
 			local vTop=oy; local vBot=win.wy+WH-BOTPAD
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
@@ -897,7 +896,7 @@ function MatchaUI:CreateWindow(config)
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
-							d.Visible = vis and top>=vTop-1 and bot<=vBot+1
+							d.Visible = vis and (top+bot)/2>=vTop and (top+bot)/2<=vBot
 						end
 					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
 						local top=ay; local bot=ay+m.oh
@@ -922,7 +921,7 @@ function MatchaUI:CreateWindow(config)
 							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
 							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
 							else top=ay; bot=ay+(m.dh or 14) end
-							d.Visible = vis and top>=vTop-1 and bot<=vBot+1
+							d.Visible = vis and (top+bot)/2>=vTop and (top+bot)/2<=vBot
 						end
 					end
 				end
