@@ -654,7 +654,7 @@ function MatchaUI:CreateWindow(config)
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
-	local BOTPAD=16  -- bottom cap height; also masks the overflow of text/icons clipped at the bottom edge
+	local BOTPAD=6   -- bottom cap height (covers the rounded-corner edge below the content cutoff)
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
@@ -876,12 +876,12 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			-- Smooth cutoff: resizable squares (element / InfoBox backgrounds) are
-			-- pixel-clipped to the viewport by resizing. Text / lines / circles / icons
-			-- can't be resized, so they render whenever they intersect the viewport and
-			-- their overflow is hidden by opaque masks (the title bar above, the bottom
-			-- cap below -- both ZIndex 60, above content). Net effect: content slides
-			-- cleanly off the top/bottom edges with a true pixel cutoff.
+			-- Cutoff: squares (element / InfoBox backgrounds) ARE pixel-clipped by
+			-- resizing, so their edges sit cleanly on the viewport bounds. Matcha draws
+			-- text & lines on top of every square regardless of ZIndex (so they can't be
+			-- masked) and can't pixel-clip text -- so text / lines / circles / icons are
+			-- hidden the instant they'd cross an edge (never bleeding outside the GUI).
+			-- The smooth square edges + line-granularity text gives a clean cutoff.
 			local vTop=oy; local vBot=win.wy+WH-BOTPAD
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
@@ -890,13 +890,13 @@ function MatchaUI:CreateWindow(config)
 					local ax=ox+C.P+m.crx
 					local ay=oy+m.cry-sy
 					local vis = active and m.elemVis~=false
-					if m.crx2~=nil then  -- Line (endpoints, not resizable -> masked)
+					if m.crx2~=nil then  -- Line (not resizable -> hide when crossing)
 						local ay2=oy+m.cry2-sy
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
-							d.Visible = vis and bot>vTop and top<vBot
+							d.Visible = vis and top>=vTop and bot<=vBot
 						end
 					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
 						local top=ay; local bot=ay+m.oh
@@ -914,14 +914,14 @@ function MatchaUI:CreateWindow(config)
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 							pcall(function() if d.Size.Y~=m.oh then d.Size=Vector2.new(d.Size.X,m.oh) end end)
 						end
-					else  -- Text / Circle / vector Icon -> render on intersect; masks hide overflow
+					else  -- Text / Circle / vector Icon -> hide the instant they'd cross an edge
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
 							local top,bot
 							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
 							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
 							else top=ay; bot=ay+(m.dh or 14) end
-							d.Visible = vis and bot>vTop and top<vBot
+							d.Visible = vis and top>=vTop-1 and bot<=vBot+1
 						end
 					end
 				end
@@ -1786,24 +1786,28 @@ function MatchaUI:CreateWindow(config)
 				local r=win._sbRect
 				if r and mx>=r.x and mx<=r.x2 and my>=r.y and my<=r.y2 then
 					sbDrag=true; sbOff=my-r.y
-				elseif inW then
-					-- title bar drag (not on buttons)
-					if my>=win.wy and my<=win.wy+C.TH and mx<win.wx+WW-56 then
-						drag=true; dox=mx-win.wx; doy=my-win.wy
-					end
-					-- check window-level hitboxes first (close, min, tab buttons)
+				else
 					local handled=false
-					for i=#win._hbs,1,-1 do
-						local h=win._hbs[i]
-						if mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
-							pcall(h.fn); handled=true; break
+					if inW then
+						-- title bar drag (not on buttons)
+						if my>=win.wy and my<=win.wy+C.TH and mx<win.wx+WW-56 then
+							drag=true; dox=mx-win.wx; doy=my-win.wy
+						end
+						-- check window-level hitboxes first (close, min, tab buttons)
+						for i=#win._hbs,1,-1 do
+							local h=win._hbs[i]
+							if mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
+								pcall(h.fn); handled=true; break
+							end
 						end
 					end
-					-- then active tab hitboxes
+					-- active tab hitboxes -- popup hitboxes (_pop) are tested even OUTSIDE
+					-- the window so colorpicker/dropdown panels that render beside the
+					-- window are clickable; normal element hitboxes still require inW.
 					if not handled and win._active then
 						for i=#win._active._thbs,1,-1 do
 							local h=win._active._thbs[i]
-							if mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
+							if (h._pop or inW) and mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
 								if h.isDrag then sldHb=h; h.drag(mx)
 								else pcall(h.fn) end
 								break
