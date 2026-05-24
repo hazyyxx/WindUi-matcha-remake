@@ -619,7 +619,6 @@ function MatchaUI:CreateWindow(config)
 		_flags={},          -- flag→elem registry
 		_keybinds={},       -- set of keybind elements to poll
 		_hidden=false,      -- whole-UI visibility
-		_clipMode=(config.ClipMode or "smooth"),  -- "smooth" = geometric cut-off, "fast" = row hide
 		_toggleKey=(KV[config.ToggleKey] or KV["RShift"] or 0xA1),  -- menu show/hide key (VK)
 		_kCapture=nil,      -- keybind capture callback
 		_iCapture=nil,      -- input capture elem
@@ -877,26 +876,51 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			-- Row-fit clipping: a drawing shows only if its WHOLE row fits inside the
-			-- content viewport. No partial rows -> never half-cut text and never spills
-			-- off the window. (Drawing text can't be pixel-clipped, so this is the clean way.)
+			-- Smooth cutoff: resizable squares (element / InfoBox backgrounds) are
+			-- pixel-clipped to the viewport so content slides cleanly off the edge,
+			-- while text/lines/circles/icons (which can't be resized) are culled when
+			-- not fully inside. Pure geometry -- no ZIndex masking (unreliable here).
 			local vTop=oy; local vBot=win.wy+WH-BOTPAD
+			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
 				if m and m.crx ~= nil then
 					local ax=ox+C.P+m.crx
 					local ay=oy+m.cry-sy
-					if m.crx2~=nil then  -- Line
+					local vis = active and m.elemVis~=false
+					if m.crx2~=nil then  -- Line (endpoints, not resizable)
+						local ay2=oy+m.cry2-sy
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
-						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(oy+m.cry2-sy+.5))
-					else
+						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
+						if m.own then
+							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
+							d.Visible = vis and top>=vTop-1 and bot<=vBot+1
+						end
+					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
+						local top=ay; local bot=ay+m.oh
+						if m.own then
+							if bot<=vTop or top>=vBot then
+								d.Visible=false
+							else
+								local ct=(top<vTop) and vTop or top
+								local cb=(bot>vBot) and vBot or bot
+								d.Position=Vector2.new(flr(ax+.5),flr(ct+.5))
+								pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(cb-ct+.5))) end)
+								d.Visible=vis
+							end
+						else
+							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
+							pcall(function() if d.Size.Y~=m.oh then d.Size=Vector2.new(d.Size.X,m.oh) end end)
+						end
+					else  -- Text / Circle / vector Icon (point/center, not resizable)
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
-						if m.oh then pcall(function() if d.Size.Y~=m.oh then d.Size=Vector2.new(d.Size.X, m.oh) end end) end
-					end
-					if m.own then
-						local rt = oy + (m.rowTop or m.cry) - sy
-						local rh = m.rowH or m.oh or 16
-						d.Visible = (tab._active and m.elemVis~=false) and rt>=vTop-1 and (rt+rh)<=vBot+1
+						if m.own then
+							local hTop,hBot
+							if m.isCircle then local r=(m.dh or 0)/2; hTop=ay-r; hBot=ay+r
+							elseif m.isImg then hTop=ay; hBot=ay+(m.oh or 16)
+							else hTop=ay; hBot=ay+(m.dh or 14) end
+							d.Visible = vis and hTop>=vTop-1 and hBot<=vBot+1
+						end
 					end
 				end
 			end
@@ -1617,10 +1641,6 @@ function MatchaUI:CreateWindow(config)
 			Callback=function(v) local sz=sizeMap[v]; if sz then win:Resize(sz[1],sz[2]) end end})
 		s:Keybind({Title="Menu Toggle Key", Desc="Show / hide this menu", Value=(VK[win._toggleKey] or "RShift"),
 			Callback=function(k) win:SetToggleKey(k) end})
-		s:Dropdown({Title="Edge Clipping", Flag="_clipmode", Desc="Smooth = perfect cut-off, Fast = better FPS",
-			Values={"Smooth","Fast"}, Value=(win._clipMode=="fast" and "Fast" or "Smooth"),
-			Callback=function(v) win._clipMode=(v=="Fast" and "fast" or "smooth")
-				if win._active then pcall(function() win._active:_refreshContentPos() end) end end})
 		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
 
 		-- Configuration (save / load element states)
