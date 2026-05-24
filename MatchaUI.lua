@@ -654,7 +654,7 @@ function MatchaUI:CreateWindow(config)
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
-	local BOTPAD=4
+	local BOTPAD=16  -- bottom cap height; also masks the overflow of text/icons clipped at the bottom edge
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
@@ -877,9 +877,11 @@ function MatchaUI:CreateWindow(config)
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
 			-- Smooth cutoff: resizable squares (element / InfoBox backgrounds) are
-			-- pixel-clipped to the viewport so content slides cleanly off the edge,
-			-- while text/lines/circles/icons (which can't be resized) are culled when
-			-- not fully inside. Pure geometry -- no ZIndex masking (unreliable here).
+			-- pixel-clipped to the viewport by resizing. Text / lines / circles / icons
+			-- can't be resized, so they render whenever they intersect the viewport and
+			-- their overflow is hidden by opaque masks (the title bar above, the bottom
+			-- cap below -- both ZIndex 60, above content). Net effect: content slides
+			-- cleanly off the top/bottom edges with a true pixel cutoff.
 			local vTop=oy; local vBot=win.wy+WH-BOTPAD
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
@@ -888,13 +890,13 @@ function MatchaUI:CreateWindow(config)
 					local ax=ox+C.P+m.crx
 					local ay=oy+m.cry-sy
 					local vis = active and m.elemVis~=false
-					if m.crx2~=nil then  -- Line (endpoints, not resizable)
+					if m.crx2~=nil then  -- Line (endpoints, not resizable -> masked)
 						local ay2=oy+m.cry2-sy
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
-							d.Visible = vis and top>=vTop-1 and bot<=vBot+1
+							d.Visible = vis and bot>vTop and top<vBot
 						end
 					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
 						local top=ay; local bot=ay+m.oh
@@ -912,14 +914,14 @@ function MatchaUI:CreateWindow(config)
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 							pcall(function() if d.Size.Y~=m.oh then d.Size=Vector2.new(d.Size.X,m.oh) end end)
 						end
-					else  -- Text / Circle / vector Icon (point/center, not resizable)
+					else  -- Text / Circle / vector Icon -> render on intersect; masks hide overflow
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
-							local hTop,hBot
-							if m.isCircle then local r=(m.dh or 0)/2; hTop=ay-r; hBot=ay+r
-							elseif m.isImg then hTop=ay; hBot=ay+(m.oh or 16)
-							else hTop=ay; hBot=ay+(m.dh or 14) end
-							d.Visible = vis and hTop>=vTop-1 and hBot<=vBot+1
+							local top,bot
+							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
+							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
+							else top=ay; bot=ay+(m.dh or 14) end
+							d.Visible = vis and bot>vTop and top<vBot
 						end
 					end
 				end
