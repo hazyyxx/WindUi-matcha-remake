@@ -2,7 +2,7 @@
 -- Drawing-based floating window UI for Matcha executor
 -- WindUI-compatible API
 
-local MatchaUI = { Version = "1.0.0", Values = {}, _windows = {} }
+local MatchaUI = { Version = "1.1.0", Values = {}, _windows = {} }
 
 -- ============================================================
 -- Constants
@@ -1528,7 +1528,7 @@ function MatchaUI:CreateWindow(config)
 				cy=cy+4
 			end  -- sections
 
-			tab._scrollMax=math.max(0,cy-(WH-C.TH)+BOTPAD+C.P)
+			tab._scrollMax=math.max(0,cy-(WH-C.TH)+BOTPAD)
 			if tab._active then win._scrollMax=tab._scrollMax end
 			tab:_refreshContentPos()
 			tab:_refreshContentHbs()
@@ -1982,6 +1982,7 @@ function MatchaUI:CreateWindow(config)
 		end)
 	end)
 
+	pcall(function() if notify then notify("MatchaUI v"..MatchaUI.Version, "MatchaUI", 3) end end)
 	return win
 end  -- CreateWindow
 
