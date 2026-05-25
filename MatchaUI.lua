@@ -654,7 +654,7 @@ function MatchaUI:CreateWindow(config)
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
-	local BOTPAD=6   -- thin bottom cap; bottom text shows down to the window edge then this masks the last few px
+	local BOTPAD=3   -- thin bottom cap over the rounded corner; content shows to ~2px from the window edge
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
@@ -877,11 +877,11 @@ function MatchaUI:CreateWindow(config)
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
 			-- Cutoff: squares (element / InfoBox backgrounds) pixel-clip by resizing.
-			-- Text/lines/icons can't be resized, so they slide UNDER the opaque bars which
-			-- mask them. TOP: a line stays visible while its bottom is below the title bar
-			-- (bot>vTop); it slides up under the bar (masked) and is culled once fully under.
-			-- BOTTOM: it stays visible all the way to the window edge (bot<=win.wy+WH) so it
-			-- is never cut early; the thin bottom cap covers the last few px + rounded corner.
+			-- Text/lines/icons can't be resized OR masked (Matcha draws them on top of every
+			-- square, so a line sliding into the title bar shows THROUGH it). So they're
+			-- culled at the edges: hidden once their top passes the content top (no text
+			-- through the title bar) and kept visible down to ~2px from the window bottom
+			-- (not cut early). Whole-line granularity -- the cleanest no-bleed option here.
 			local vTop=oy; local vBot=win.wy+WH-BOTPAD
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
@@ -896,7 +896,7 @@ function MatchaUI:CreateWindow(config)
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
-							d.Visible = vis and bot>vTop and bot<=win.wy+WH
+							d.Visible = vis and top>=vTop and bot<=win.wy+WH-2
 						end
 					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
 						local top=ay; local bot=ay+m.oh
@@ -921,7 +921,7 @@ function MatchaUI:CreateWindow(config)
 							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
 							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
 							else top=ay; bot=ay+(m.dh or 14) end
-							d.Visible = vis and bot>vTop and bot<=win.wy+WH
+							d.Visible = vis and top>=vTop and bot<=win.wy+WH-2
 						end
 					end
 				end
