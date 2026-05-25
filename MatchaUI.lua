@@ -867,12 +867,18 @@ function MatchaUI:CreateWindow(config)
 		-- register content drawing: stores relative offset within content area
 		local function rcd(d, cx,cy, opts)
 			local m=M(d); m.crx=cx; m.cry=cy; m.own=true  -- relative to content area origin
+			-- Detect type by Size FIRST. Matcha returns a bogus default .Radius (~50) on
+			-- non-circles, so checking d.Radius unconditionally flagged every Text/Square as a
+			-- 100px circle -> the clip math then culled text ~50px before each edge. Only fall
+			-- back to Radius for things Size didn't identify (genuine circles have no Size).
 			pcall(function()
 				local sz=d.Size
-				if type(sz)=="number" then m.dh=sz                 -- Text (font px height)
-				elseif sz and sz.Y then m.oh=sz.Y end              -- Square/Image (Vector2)
+				if type(sz)=="number" then m.dh=sz                          -- Text (font px height)
+				elseif sz and sz.Y and sz.Y>0 then m.oh=sz.Y                -- Square/Image (Vector2)
+				elseif type(d.Radius)=="number" and d.Radius>0 then         -- Circle (center-anchored)
+					m.dh=d.Radius*2; m.isCircle=true
+				end
 			end)
-			pcall(function() if d.Radius then m.dh=d.Radius*2; m.isCircle=true end end)  -- Circle (center-anchored)
 			if opts then for k,v in pairs(opts) do m[k]=v end end
 			tab._tdraws[#tab._tdraws+1]=d
 			win._all[#win._all+1]=d
