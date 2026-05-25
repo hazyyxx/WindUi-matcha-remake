@@ -637,7 +637,7 @@ function MatchaUI:CreateWindow(config)
 	local wBrd  = reg(sq(win.wx-1,win.wy-1,WW+2,WH+2, darken(T.Background,.5), C.CRN+1,40))
 	local wBg   = reg(sq(win.wx,win.wy,WW,WH, T.Background, C.CRN,42))
 	local wBar  = reg(sq(win.wx,win.wy,WW,C.TH, T.Background, C.CRN,60))
-	local wBarB = reg(sq(win.wx,win.wy+C.TH-4,WW,8, T.Background,0,60))  -- cover rounded bottom of bar
+	local wBarB = reg(sq(win.wx,win.wy+C.TH-8,WW,8, T.Background,0,60))  -- cover rounded bottom of bar (kept above the content area)
 	local wTbSep = reg(sq(win.wx,win.wy+C.TH-1,WW,1, lighten(T.Background,.10),0,61))
 	local _titleX = C.P+2
 	if config.Icon then
@@ -654,7 +654,7 @@ function MatchaUI:CreateWindow(config)
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
-	local BOTPAD=3   -- thin bottom cap over the rounded corner; bottom text shows down to the window edge (not cut early)
+	local BOTPAD=6   -- thin bottom cap; bottom text shows down to the window edge then this masks the last few px
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
@@ -676,7 +676,7 @@ function MatchaUI:CreateWindow(config)
 		local m=M(d); m.rx=rx; m.ry=ry
 		if rx2 then m.rx2=rx2; m.ry2=ry2 end
 	end
-	setRel(wBrd,-1,-1); setRel(wBg,0,0); setRel(wBar,0,0); setRel(wBarB,0,C.TH-4); setRel(wTbSep,0,C.TH-1)
+	setRel(wBrd,-1,-1); setRel(wBg,0,0); setRel(wBar,0,0); setRel(wBarB,0,C.TH-8); setRel(wTbSep,0,C.TH-1)
 	setRel(wTtx,_titleX,9); setRel(wSide,0,C.TH); setRel(wSLn,C.SW,C.TH,C.SW,WH)
 	setRel(wCont,C.SW+1,C.TH); setRel(wBotMask,C.SW+1,WH-BOTPAD); setRel(wClBg,WW-28,7); setRel(wClTx,WW-23,9)
 	setRel(wMnBg,WW-52,7); setRel(wMnTx,WW-48,10)
@@ -877,12 +877,11 @@ function MatchaUI:CreateWindow(config)
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
 			-- Cutoff: squares (element / InfoBox backgrounds) pixel-clip by resizing.
-			-- Text/lines/icons can't be resized. TOP: a line slides UP under the title bar
-			-- (which masks it) and is culled once its top passes the bar's vertical middle
-			-- (vTop-C.TH/2) -- so it vanishes around the title text instead of creeping to
-			-- the very top. BOTTOM: it stays visible all the way to the window edge and is
-			-- culled only when its bottom would pass below it -- never cut early, never
-			-- spilling out. A thin cap covers the rounded corner.
+			-- Text/lines/icons can't be resized, so they slide UNDER the opaque bars which
+			-- mask them. TOP: a line stays visible while its bottom is below the title bar
+			-- (bot>vTop); it slides up under the bar (masked) and is culled once fully under.
+			-- BOTTOM: it stays visible all the way to the window edge (bot<=win.wy+WH) so it
+			-- is never cut early; the thin bottom cap covers the last few px + rounded corner.
 			local vTop=oy; local vBot=win.wy+WH-BOTPAD
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
@@ -897,7 +896,7 @@ function MatchaUI:CreateWindow(config)
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
-							d.Visible = vis and top>vTop-C.TH/2 and bot<win.wy+WH
+							d.Visible = vis and bot>vTop and bot<=win.wy+WH
 						end
 					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
 						local top=ay; local bot=ay+m.oh
@@ -922,7 +921,7 @@ function MatchaUI:CreateWindow(config)
 							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
 							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
 							else top=ay; bot=ay+(m.dh or 14) end
-							d.Visible = vis and top>vTop-C.TH/2 and bot<win.wy+WH
+							d.Visible = vis and bot>vTop and bot<=win.wy+WH
 						end
 					end
 				end
@@ -1810,9 +1809,11 @@ function MatchaUI:CreateWindow(config)
 					-- the window so colorpicker/dropdown panels that render beside the
 					-- window are clickable; normal element hitboxes still require inW.
 					if not handled and win._active then
+						local cTop=win.wy+C.TH; local cBot=win.wy+WH
 						for i=#win._active._thbs,1,-1 do
 							local h=win._active._thbs[i]
-							if (h._pop or inW) and mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
+							local hok = h._pop or (inW and my>=cTop and my<cBot)
+							if hok and mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
 								if h.isDrag then sldHb=h; h.drag(mx)
 								else pcall(h.fn) end
 								break
