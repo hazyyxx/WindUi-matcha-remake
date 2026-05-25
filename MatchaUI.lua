@@ -891,8 +891,10 @@ function MatchaUI:CreateWindow(config)
 			-- window, then we hide them (so they can't bleed into the game world above/below).
 			-- Squares are still resize-clipped: a 32px row is taller than the masks, so a hard
 			-- hide would pop -- clipping keeps the top pinned under the bar, bottom at the edge.
+			-- Everything clips/hides at the WINDOW bounds; the title bar (ZIndex 60) and the
+			-- bottom mask (60) draw over content, so anything inside these bounds but within a
+			-- mask band is hidden by the mask -- it slides UNDER the chrome, never cut early.
 			local winTop=win.wy; local winBot=win.wy+WH
-			local sqTop=oy                       -- = win.wy+C.TH (content top, just under bar)
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
@@ -908,13 +910,13 @@ function MatchaUI:CreateWindow(config)
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
 							d.Visible = vis and top>=winTop and bot<=winBot
 						end
-					elseif m.oh and not m.isImg then  -- Square -> resize-clip to [content top, window bottom]
+					elseif m.oh and not m.isImg then  -- Square -> resize-clip to the window (a tall row would pop if hard-hidden)
 						local top=ay; local bot=ay+m.oh
 						if m.own then
-							if bot<=sqTop or top>=winBot then
+							if bot<=winTop or top>=winBot then
 								d.Visible=false
 							else
-								local ct=(top<sqTop) and sqTop or top
+								local ct=(top<winTop) and winTop or top
 								local cb=(bot>winBot) and winBot or bot
 								d.Position=Vector2.new(flr(ax+.5),flr(ct+.5))
 								pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(cb-ct+.5))) end)
@@ -1635,8 +1637,29 @@ function MatchaUI:CreateWindow(config)
 		local ml=M(wSLn); ml.ry2=WH
 		M(wClBg).rx=WW-28; M(wClTx).rx=WW-23; M(wMnBg).rx=WW-52; M(wMnTx).rx=WW-48
 		closeHb._dRx=WW-28; minHb._dRx=WW-52
+		-- Content was laid out for the OLD size (element widths, right-aligned bits and scroll
+		-- range are baked in at build time). Tear it down and rebuild at the new W/H. Only the
+		-- active tab is rebuilt now; the rest are flagged for lazy rebuild on their next switch.
+		if win._active then pcall(function() win._active:_closePopups() end) end
+		for i=#win._all,1,-1 do
+			local d=win._all[i]; local m=META[d]
+			if m and m.crx~=nil then pcall(function() d:Remove() end); table.remove(win._all,i) end
+		end
+		for _,t in ipairs(win._tabs) do
+			t._tdraws={}; t._thbs={}; t._built=false
+			for _,sec in ipairs(t._sections) do
+				for _,el in ipairs(sec._elements) do el._drawings={}; el._popupDs=nil end
+			end
+		end
 		refreshChrome(); refreshChromeHbs()
+		if win._active then
+			win._active:_build()
+			win._scrollMax=win._active._scrollMax or 0
+			win._scrollY=clamp(win._scrollY,0,win._scrollMax)
+			win._active:_refreshContentPos(); win._active:_refreshContentHbs()
+		end
 		win:_applyTheme()
+		win:_updateScrollbar()
 	end
 
 	-- Built-in Settings tab (library features)
