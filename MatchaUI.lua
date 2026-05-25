@@ -657,9 +657,12 @@ function MatchaUI:CreateWindow(config)
 	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, lighten(T.Background,.022),0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
-	-- thin bottom cap (covers the rounded-corner edge); rows are clipped by row-fit logic
-	local BOTPAD=3   -- thin bottom cap over the rounded corner; content shows to ~2px from the window edge
-	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,0,60))
+	-- bottom mask: a bg-coloured strip (ZIndex 60 > content) that rows scroll UNDER, so text
+	-- slides out of view at the bottom the same way it slides under the title bar. Rounded
+	-- corners (C.CRN) match the window; the rounded TOP corners sit over same-colour content
+	-- bg so they're invisible. Tall enough (>=16) to fully hide an icon/text line.
+	local BOTPAD=16
+	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,C.CRN,60))
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
 	-- tooltip (positioned dynamically at cursor)
@@ -699,11 +702,12 @@ function MatchaUI:CreateWindow(config)
 		end
 	end
 
-	-- Content clipping check
-	local function inClip(y) return y >= win.wy+C.TH and y < win.wy+WH-2 end
+	-- Content can slide UNDER the title bar / bottom mask (hidden by ZIndex), so the coarse
+	-- visibility gate is the whole WINDOW; _refreshContentPos does the precise per-edge work.
+	local function inClip(y) return y >= win.wy and y < win.wy+WH end
 
 	-- Scrollbar geometry (driven by active tab's scroll state)
-	local function viewH() return WH-C.TH-4 end
+	local function viewH() return WH-C.TH-BOTPAD end
 	function win:_updateScrollbar()
 		local sMax = win._scrollMax or 0
 		if win._minimized or not win._active or sMax<=0 then
@@ -880,13 +884,15 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			-- Edge cull: squares (row / InfoBox backgrounds) pixel-clip by RESIZING, so they
-			-- slide cleanly under the title bar / bottom cap. Text/lines/icons can't be
-			-- resized, masked, OR faded -- assigning Transparency to a Matcha Text corrupts
-			-- it (the black outline takes over and it renders dark instead of fading). So
-			-- they are culled whole: shown only while fully inside the content band, hidden
-			-- the instant an edge crosses them. No bleed past the bars, no darkening.
-			local vTop=oy; local vBot=win.wy+WH-BOTPAD
+			-- Seamless scroll via Z-MASKING. Matcha honours global ZIndex, so the title bar
+			-- (ZIndex 60) and the bottom mask strip (60) draw OVER content (<=56): anything
+			-- scrolled into them is hidden by them -- sliding cleanly UNDER the bar instead of
+			-- being cut off early. So text/lines/icons just stay drawn until they leave the
+			-- window, then we hide them (so they can't bleed into the game world above/below).
+			-- Squares are still resize-clipped: a 32px row is taller than the masks, so a hard
+			-- hide would pop -- clipping keeps the top pinned under the bar, bottom at the edge.
+			local winTop=win.wy; local winBot=win.wy+WH
+			local sqTop=oy                       -- = win.wy+C.TH (content top, just under bar)
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
@@ -900,16 +906,16 @@ function MatchaUI:CreateWindow(config)
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
-							d.Visible = vis and top>=vTop and bot<=vBot
+							d.Visible = vis and top>=winTop and bot<=winBot
 						end
-					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
+					elseif m.oh and not m.isImg then  -- Square -> resize-clip to [content top, window bottom]
 						local top=ay; local bot=ay+m.oh
 						if m.own then
-							if bot<=vTop or top>=vBot then
+							if bot<=sqTop or top>=winBot then
 								d.Visible=false
 							else
-								local ct=(top<vTop) and vTop or top
-								local cb=(bot>vBot) and vBot or bot
+								local ct=(top<sqTop) and sqTop or top
+								local cb=(bot>winBot) and winBot or bot
 								d.Position=Vector2.new(flr(ax+.5),flr(ct+.5))
 								pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(cb-ct+.5))) end)
 								d.Visible=vis
@@ -918,14 +924,14 @@ function MatchaUI:CreateWindow(config)
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 							pcall(function() if d.Size.Y~=m.oh then d.Size=Vector2.new(d.Size.X,m.oh) end end)
 						end
-					else  -- Text / Circle / vector Icon -> visible while their TOP is within the bars
+					else  -- Text / Circle / vector Icon -> slide under the masks; hide only off-window
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
 							local top,bot
 							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
 							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
 							else top=ay; bot=ay+(m.dh or 14) end
-							d.Visible = vis and top>=vTop and bot<=vBot
+							d.Visible = vis and top>=winTop and bot<=winBot
 						end
 					end
 				end
@@ -1520,7 +1526,7 @@ function MatchaUI:CreateWindow(config)
 				cy=cy+4
 			end  -- sections
 
-			tab._scrollMax=math.max(0,cy-(WH-C.TH)+C.P)
+			tab._scrollMax=math.max(0,cy-(WH-C.TH)+BOTPAD+C.P)
 			if tab._active then win._scrollMax=tab._scrollMax end
 			tab:_refreshContentPos()
 			tab:_refreshContentHbs()
@@ -1813,7 +1819,7 @@ function MatchaUI:CreateWindow(config)
 					-- the window so colorpicker/dropdown panels that render beside the
 					-- window are clickable; normal element hitboxes still require inW.
 					if not handled and win._active then
-						local cTop=win.wy+C.TH; local cBot=win.wy+WH
+						local cTop=win.wy+C.TH; local cBot=win.wy+WH-BOTPAD
 						for i=#win._active._thbs,1,-1 do
 							local h=win._active._thbs[i]
 							local hok = h._pop or (inW and my>=cTop and my<cBot)
