@@ -1982,9 +1982,42 @@ function MatchaUI:CreateWindow(config)
 		end)
 	end)
 
+	-- DIAGNOSTIC (temporary): dump the active tab's content geometry to clipboard so we can
+	-- see exactly what is hidden and why. Call getgenv().MatchaUI:DumpScroll() in Matcha.
+	function win:DumpScroll()
+		local t=win._active
+		local out={ string.format("v%s wy=%d WH=%d winTop=%d winBot=%d contentTop=%d sy=%d sMax=%d",
+			MatchaUI.Version, win.wy, WH, win.wy, win.wy+WH, win.wy+C.TH, win._scrollY, win._scrollMax or 0) }
+		if t then
+			local n=0
+			for _,d in ipairs(t._tdraws) do
+				local m=META[d]
+				if m and m.crx~=nil and n<16 then
+					n=n+1
+					local ay=(win.wy+C.TH)+m.cry-win._scrollY
+					local kind = m.crx2 and "Line" or (m.isImg and "Icon" or (m.isCircle and "Circle" or (m.oh and "Square" or "Text")))
+					local h=m.oh or m.dh or 0
+					local vis; pcall(function() vis=d.Visible end)
+					out[#out+1]=string.format("%-6s cry=%-4.0f ay=%-5.0f h=%-3.0f vis=%-5s own=%s", kind, m.cry, ay, h, tostring(vis), tostring(m.own))
+				end
+			end
+		end
+		local s=table.concat(out,"\n")
+		pcall(function() setclipboard(s) end)
+		pcall(function() if notify then notify("Scroll dump copied to clipboard","MatchaUI",4) end end)
+		return s
+	end
+	MatchaUI._lastWindow=win
+
 	pcall(function() if notify then notify("MatchaUI v"..MatchaUI.Version, "MatchaUI", 3) end end)
 	return win
 end  -- CreateWindow
+
+-- DIAGNOSTIC wrapper: getgenv().MatchaUI:DumpScroll()
+function MatchaUI:DumpScroll()
+	if self._lastWindow and self._lastWindow.DumpScroll then return self._lastWindow:DumpScroll() end
+	return "no window"
+end
 
 -- ============================================================
 -- Notify / Popup stubs
