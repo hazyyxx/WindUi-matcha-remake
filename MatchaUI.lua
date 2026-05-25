@@ -1810,6 +1810,12 @@ function MatchaUI:CreateWindow(config)
 				if td and not tgState and not win._kCapture and not win._iCapture then pcall(function() win:Toggle() end) end
 				tgState=td
 			end
+			-- DEBUG: press F8 to copy the active tab's scroll geometry to the clipboard
+			if iskeypressed then
+				if iskeypressed(0x77) then
+					if not win._dbgDumpDn then win._dbgDumpDn=true; pcall(function() win:DumpScroll() end) end
+				else win._dbgDumpDn=false end
+			end
 			if win._hidden then lmb=ismouse1pressed(); continue end
 			local m=getMouse(); if not m then continue end
 			local mx,my=m.X,m.Y
