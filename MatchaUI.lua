@@ -4,12 +4,6 @@
 
 local MatchaUI = { Version = "1.0.0", Values = {}, _windows = {} }
 
--- px fade band at the top (under the title bar) and bottom of the scroll area.
--- Text/icons/lines fade their Transparency to 0 across this band as they reach an
--- edge, so they vanish smoothly right before the title bar instead of popping.
--- Set to 0 for the old hard cutoff. Larger = longer, softer fade.
-MatchaUI.ScrollFade = 16
-
 -- ============================================================
 -- Constants
 -- ============================================================
@@ -886,23 +880,13 @@ function MatchaUI:CreateWindow(config)
 
 		function tab:_refreshContentPos()
 			local ox=CX(); local oy=CY(); local sy=win._scrollY
-			-- Cutoff: squares (element / InfoBox backgrounds) pixel-clip by resizing.
-			-- Text/lines/icons can't be resized OR masked (Matcha draws them on top of
-			-- every square), so instead we FADE their Transparency to invisible across a
-			-- band at each edge. They dissolve right before the title bar / window bottom
-			-- rather than popping, which reads as content sliding under the bar.
+			-- Edge cull: squares (row / InfoBox backgrounds) pixel-clip by RESIZING, so they
+			-- slide cleanly under the title bar / bottom cap. Text/lines/icons can't be
+			-- resized, masked, OR faded -- assigning Transparency to a Matcha Text corrupts
+			-- it (the black outline takes over and it renders dark instead of fading). So
+			-- they are culled whole: shown only while fully inside the content band, hidden
+			-- the instant an edge crosses them. No bleed past the bars, no darkening.
 			local vTop=oy; local vBot=win.wy+WH-BOTPAD
-			local FADE=MatchaUI.ScrollFade or 0
-			-- transparency 0..1 for an item spanning [top,bot]; nil = fully outside (hide)
-			local function edgeT(top,bot)
-				if bot<=vTop or top>=vBot then return nil end
-				local t=0
-				if FADE>0 then
-					if top<vTop+FADE then t=math.max(t,(vTop+FADE-top)/FADE) end
-					if bot>vBot-FADE then t=math.max(t,(bot-(vBot-FADE))/FADE) end
-				end
-				return t>1 and 1 or (t<0 and 0 or t)
-			end
 			local active=tab._active
 			for _,d in ipairs(tab._tdraws) do
 				local m=META[d]
@@ -915,9 +899,8 @@ function MatchaUI:CreateWindow(config)
 						d.From=Vector2.new(flr(ax+.5),flr(ay+.5))
 						d.To=Vector2.new(flr(ox+C.P+m.crx2+.5),flr(ay2+.5))
 						if m.own then
-							local t=edgeT(math.min(ay,ay2),math.max(ay,ay2))
-							if t==nil then d.Visible=false
-							else d.Visible=vis; pcall(function() d.Transparency=t end) end
+							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
+							d.Visible = vis and top>=vTop and bot<=vBot
 						end
 					elseif m.oh and not m.isImg then  -- Square/Image -> clip by resize
 						local top=ay; local bot=ay+m.oh
@@ -942,9 +925,7 @@ function MatchaUI:CreateWindow(config)
 							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
 							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
 							else top=ay; bot=ay+(m.dh or 14) end
-							local t=edgeT(top,bot)
-							if t==nil then d.Visible=false
-							else d.Visible=vis; pcall(function() d.Transparency=t end) end
+							d.Visible = vis and top>=vTop and bot<=vBot
 						end
 					end
 				end
