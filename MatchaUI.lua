@@ -1077,14 +1077,56 @@ function MatchaUI:CreateWindow(config)
 					return r
 				end
 				local items=flat(c.Values)
+				local isMulti = c.Multi==true or c.MultiSelect==true
 				local defV=c.Value
 				if type(defV)=="number" then defV=items[defV] end
+				if isMulti then
+					if type(defV)~="table" then defV = (defV and {defV}) or {} end
+				else
+					defV = defV or items[1]
+				end
 				local e={__type="Dropdown",_id=c.Flag or c.Title,Title=c.Title or "Dropdown",
-					Value=defV or items[1],Items=items,Callback=c.Callback or function()end,
+					Value=defV,Items=items,Multi=isMulti,
+					Placeholder=c.Placeholder or "None",
+					Callback=c.Callback or function()end,
 					_drawings={},_elemVis=true,_popupDs=nil}
-				function e:Set(v,nc) self.Value=v; if self._id then MatchaUI.Values[self._id]=v end
-					if self._stx then self._stx.Text=tostring(v or "") end
-					if not nc then pcall(self.Callback,v) end
+				function e:_describe()
+					if self.Multi then
+						local list=(type(self.Value)=="table" and self.Value) or {}
+						if #list==0 then return self.Placeholder or "None" end
+						local s=table.concat(list,", ")
+						if #s>22 then return tostring(#list).." selected" end
+						return s
+					end
+					return tostring(self.Value or "")
+				end
+				function e:Set(v,nc)
+					if self.Multi then
+						if type(v)=="string" then v={v}
+						elseif type(v)~="table" then v={} end
+						self.Value=v
+					else
+						self.Value=v
+					end
+					if self._id then MatchaUI.Values[self._id]=self.Value end
+					if self._stx then self._stx.Text=self:_describe() end
+					if not nc then pcall(self.Callback,self.Value) end
+				end
+				function e:HasItem(item)
+					if not self.Multi then return self.Value==item end
+					for _,v in ipairs(self.Value or {}) do if v==item then return true end end
+					return false
+				end
+				function e:Toggle(item)
+					if not self.Multi then self:Set(item); return end
+					local list=self.Value or {}
+					local found
+					for i,v in ipairs(list) do if v==item then found=i; break end end
+					if found then table.remove(list,found) else list[#list+1]=item end
+					self.Value=list
+					if self._id then MatchaUI.Values[self._id]=list end
+					if self._stx then self._stx.Text=self:_describe() end
+					pcall(self.Callback,list)
 				end
 				function e:Refresh(nv)
 					local r={}
@@ -1094,7 +1136,12 @@ function MatchaUI:CreateWindow(config)
 					end
 					self.Items=r
 				end
-				function e:Select(v) if type(v)=="table" then v=v[1] end; self:Set(v) end
+				function e:Select(v)
+					if type(v)=="table" then
+						if self.Multi then self:Set(v) else self:Set(v[1]) end; return
+					end
+					self:Set(v)
+				end
 				return addEl(e,c)
 			end
 
@@ -1352,7 +1399,7 @@ function MatchaUI:CreateWindow(config)
 					elseif el.__type=="Dropdown" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
 						local lbl = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNT,54,show), lblx,ecy+titleY)
-						local stx = rcd(tx(tostring(el.Value or ""),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-92,ecy+9)
+						local stx = rcd(tx(el:_describe(),0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-92,ecy+9)
 						local arr = rcd(tx("v",0,0,T2.Placeholder,C.FSM,FNT,54,show), ew-18,ecy+10)
 						setOwn({bg,lbl,stx,arr}, show)
 						el._drawings={bg,lbl,stx,arr}; el._stx=stx
@@ -1362,6 +1409,7 @@ function MatchaUI:CreateWindow(config)
 								for _,d in ipairs(el._popupDs) do pcall(function()d:Remove()end) end
 								el._popupDs=nil
 							end
+							el._popupBgs=nil
 							for i=#tab._thbs,1,-1 do if tab._thbs[i]._pop then table.remove(tab._thbs,i) end end
 						end
 
@@ -1369,6 +1417,7 @@ function MatchaUI:CreateWindow(config)
 						ddHb=chb(0,ecy,ew,ecy+C.EH, function()
 							if el._popupDs then closePopup(); return end
 							el._popupDs={}
+							el._popupBgs={}   -- item -> iBg drawing, used for live re-color in Multi mode
 							local maxS=math.min(#el.Items,7)
 							local pH=maxS*22+4
 							local pY2=ddHb.y+C.EH
@@ -1381,15 +1430,26 @@ function MatchaUI:CreateWindow(config)
 								if i>maxS then break end
 								local iy=pY2+(i-1)*22+2
 								local iBg=Drawing.new("Square"); iBg.Filled=true
-								iBg.Color=(tostring(el.Value)==item) and lighten(T2.Accent,.1) or T2.Dialog
+								iBg.Color=el:HasItem(item) and lighten(T2.Accent,.1) or T2.Dialog
 								iBg.Corner=3; iBg.ZIndex=81
 								iBg.Position=Vector2.new(ddHb.x+2,iy); iBg.Size=Vector2.new(ew-4,20); iBg.Visible=true
 								local iTx=Drawing.new("Text"); iTx.Text=item; iTx.Color=T2.Text
 								iTx.Size=C.FSM; iTx.Font=FNT; iTx.Outline=false; iTx.ZIndex=82
 								iTx.Position=Vector2.new(ddHb.x+10,iy+4); iTx.Visible=true
 								el._popupDs[#el._popupDs+1]=iBg; el._popupDs[#el._popupDs+1]=iTx
+								el._popupBgs[item]=iBg
 								local itemH={x=ddHb.x+2,y=iy,x2=ddHb.x+ew-2,y2=iy+20,_pop=true,fn=function()
-									el:Set(item); closePopup()
+									if el.Multi then
+										el:Toggle(item)
+										-- live re-color all visible item rows
+										if el._popupBgs then
+											for it,bg2 in pairs(el._popupBgs) do
+												pcall(function() bg2.Color = el:HasItem(it) and lighten(T2.Accent,.1) or T2.Dialog end)
+											end
+										end
+									else
+										el:Set(item); closePopup()
+									end
 								end}
 								tab._thbs[#tab._thbs+1]=itemH
 							end
@@ -1737,6 +1797,16 @@ function MatchaUI:CreateWindow(config)
 			Callback=function(v) local sz=sizeMap[v]; if sz then win:Resize(sz[1],sz[2]) end end})
 		s:Keybind({Title="Menu Toggle Key", Desc="Show / hide this menu", Value=(VK[win._toggleKey] or "RShift"),
 			Callback=function(k) win:SetToggleKey(k) end})
+		s:Button({Title="Reset Window Position", Desc="Re-center the menu on screen", Callback=function()
+			pcall(function()
+				local vp=workspace.CurrentCamera.ViewportSize
+				win.wx=flr((vp.X-WW)/2); win.wy=flr((vp.Y-WH)/2)
+				refreshChrome(); refreshChromeHbs()
+				for _,tt in ipairs(win._tabs) do tt:_refreshTabHb() end
+				if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
+				win:_updateScrollbar()
+			end)
+		end})
 		s:Button({Title="Unload UI", Desc="Close and remove the interface", Callback=function() win:Destroy() end})
 
 		-- Configuration (save / load element states)
