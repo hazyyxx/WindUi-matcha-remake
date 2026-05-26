@@ -2030,7 +2030,9 @@ function MatchaUI:CreateWindow(config)
 			-- Auto-clamp window into the viewport (once a second). Cheap safety net for when
 			-- the screen resolution changes or some external action drags it off-screen, so
 			-- the user can always reach the title bar without needing the Reset button.
-			if frameN % 30 == 0 then
+			-- Skip while dragging anything -- the extra full refresh competes with the drag's
+			-- own per-frame refresh and shows up as bottom-text jitter / lag.
+			if frameN % 30 == 0 and not drag and not sbDrag and not sldHb then
 				pcall(function()
 					local vp=workspace.CurrentCamera.ViewportSize
 					local maxX=math.max(0,vp.X-WW); local maxY=math.max(0,vp.Y-WH)
@@ -2113,10 +2115,14 @@ function MatchaUI:CreateWindow(config)
 					local nx=clamp(mx-dox,0,vp2.X-WW); local ny=clamp(my-doy,0,vp2.Y-WH)
 					if nx~=win.wx or ny~=win.wy then
 						win.wx=nx; win.wy=ny
-						refreshChrome(); refreshChromeHbs()
-						for _,t in ipairs(win._tabs) do t:_refreshTabHb() end
-						if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
+						-- Visuals first (chrome + content + scrollbar) so the renderer reads a
+						-- consistent frame, then hitboxes catch up.
+						refreshChrome()
+						if win._active then win._active:_refreshContentPos() end
 						win:_updateScrollbar()
+						refreshChromeHbs()
+						for _,t in ipairs(win._tabs) do t:_refreshTabHb() end
+						if win._active then win._active:_refreshContentHbs() end
 					end
 				end
 				if sbDrag then pcall(function() win:_scrollTo(my, sbOff) end) end
