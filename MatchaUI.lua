@@ -1416,6 +1416,7 @@ function MatchaUI:CreateWindow(config)
 						local ddHb
 						ddHb=chb(0,ecy,ew,ecy+C.EH, function()
 							if el._popupDs then closePopup(); return end
+							tab:_closePopups()   -- close any OTHER element's popup before opening ours
 							el._popupDs={}
 							el._popupBgs={}   -- item -> iBg drawing, used for live re-color in Multi mode
 							local maxS=math.min(#el.Items,7)
@@ -1454,6 +1455,7 @@ function MatchaUI:CreateWindow(config)
 								tab._thbs[#tab._thbs+1]=itemH
 							end
 						end)
+						ddHb._popOwn=true   -- mark as popup trigger so click-outside-to-close skips it
 
 					elseif el.__type=="Keybind" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
@@ -1502,6 +1504,7 @@ function MatchaUI:CreateWindow(config)
 						local cpHb
 						cpHb=chb(0,ecy,ew,ecy+C.EH, function()
 							if el._popupDs then closeCP(); return end
+							tab:_closePopups()   -- close any OTHER element's popup before opening ours
 							el._popupDs={}
 							local ds=el._popupDs
 							local function addD(d) ds[#ds+1]=d; return d end
@@ -1561,6 +1564,7 @@ function MatchaUI:CreateWindow(config)
 							hexTx=addD(Drawing.new("Text")); hexTx.Text=string.format("#%02X%02X%02X",R,G,B); hexTx.Color=T2.Placeholder; hexTx.Size=C.FSM; hexTx.ZIndex=82; pcall(function() hexTx.Font=FNT end)
 							pcall(function() hexTx.Position=Vector2.new(px+8,py+ph-18); hexTx.Visible=true end)
 						end)
+						cpHb._popOwn=true   -- mark as popup trigger so click-outside-to-close skips it
 
 					elseif el.__type=="Label" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
@@ -1931,6 +1935,23 @@ function MatchaUI:CreateWindow(config)
 		while win._alive do
 			task.wait(0.033)
 			frameN=frameN+1
+			-- Auto-clamp window into the viewport (once a second). Cheap safety net for when
+			-- the screen resolution changes or some external action drags it off-screen, so
+			-- the user can always reach the title bar without needing the Reset button.
+			if frameN % 30 == 0 then
+				pcall(function()
+					local vp=workspace.CurrentCamera.ViewportSize
+					local maxX=math.max(0,vp.X-WW); local maxY=math.max(0,vp.Y-WH)
+					local nx=clamp(win.wx,0,maxX); local ny=clamp(win.wy,0,maxY)
+					if nx~=win.wx or ny~=win.wy then
+						win.wx=nx; win.wy=ny
+						refreshChrome(); refreshChromeHbs()
+						for _,t in ipairs(win._tabs) do t:_refreshTabHb() end
+						if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
+						win:_updateScrollbar()
+					end
+				end)
+			end
 			-- menu toggle key (show/hide whole UI)
 			if iskeypressed and win._toggleKey then
 				local td=iskeypressed(win._toggleKey)
@@ -1946,6 +1967,17 @@ function MatchaUI:CreateWindow(config)
 
 			if rise then
 				local inW = mx>=win.wx and mx<=win.wx+WW and my>=win.wy and my<=win.wy+WH
+				-- Click-outside-popup-closes-it: if the click hit neither a popup body (_pop)
+				-- nor a popup trigger (_popOwn), close every open popup before dispatching.
+				if win._active then
+					local hitPopOrOwn=false
+					for _,h in ipairs(win._active._thbs) do
+						if (h._pop or h._popOwn) and mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
+							hitPopOrOwn=true; break
+						end
+					end
+					if not hitPopOrOwn then win._active:_closePopups() end
+				end
 				-- scrollbar thumb grab (highest priority)
 				local r=win._sbRect
 				if r and mx>=r.x and mx<=r.x2 and my>=r.y and my<=r.y2 then
