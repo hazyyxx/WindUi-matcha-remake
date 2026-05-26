@@ -1002,14 +1002,20 @@ function MatchaUI:CreateWindow(config)
 							local top=math.min(ay,ay2); local bot=math.max(ay,ay2)
 							d.Visible = vis and top>=winTop and bot<=winBot
 						end
-					elseif m.oh and not m.isImg then  -- Square -> resize-clip to the window (a tall row would pop if hard-hidden)
+					elseif m.oh and not m.isImg then  -- Square -> resize-clip to the CONTENT area
+						-- Clip strictly to the content area (not the whole window). Square-over-square
+						-- masking in Matcha doesn't reliably hide row backgrounds inside the title
+						-- bar / bottom mask -- they bleed through. Clipping at the content edges
+						-- means the row background can't enter those regions in the first place.
+						local contentTop=oy
+						local contentBot=winBot-BOTPAD
 						local top=ay; local bot=ay+m.oh
 						if m.own then
-							if bot<=winTop or top>=winBot then
+							if bot<=contentTop or top>=contentBot then
 								d.Visible=false
 							else
-								local ct=(top<winTop) and winTop or top
-								local cb=(bot>winBot) and winBot or bot
+								local ct=(top<contentTop) and contentTop or top
+								local cb=(bot>contentBot) and contentBot or bot
 								d.Position=Vector2.new(flr(ax+.5),flr(ct+.5))
 								pcall(function() d.Size=Vector2.new(d.Size.X, math.max(1,flr(cb-ct+.5))) end)
 								d.Visible=vis
@@ -1417,7 +1423,10 @@ function MatchaUI:CreateWindow(config)
 						local trkX=ew-tw-C.P; local trkY=ecy+8
 						local trk  = rcd(sq(0,0,tw,th,el.Value and T2.Toggle or T2.Button,th//2,53,show), trkX,trkY)
 						local tmX  = el.Value and (trkX+tw-th+2) or (trkX+2)
-						local tmb  = rcd(ci(0,0,th//2-2,Color3.fromRGB(255,255,255),55,show), tmX+th//2-2,trkY+th//2)
+						-- Tag isCircle explicitly: Matcha returns a bogus default Size on Circle drawings
+						-- which can defeat the auto-detect in rcd. Without isCircle the strict-cull
+						-- doesn't fire and the white thumb peeks over the bar.
+						local tmb  = rcd(ci(0,0,th//2-2,Color3.fromRGB(255,255,255),55,show), tmX+th//2-2,trkY+th//2, {isCircle=true,dh=th-4})
 						setOwn({bg,lbl,trk,tmb}, show)
 						el._drawings={bg,lbl,trk,tmb}; el._track=trk; el._thumb=tmb
 						chb(0,ecy,ew,ecy+C.EH, function()
@@ -1434,7 +1443,7 @@ function MatchaUI:CreateWindow(config)
 						local pct =(el.Value-el.Min)/math.max(1,el.Max-el.Min)
 						local fw  = math.max(4,flr(pct*tw+.5))
 						local fill= rcd(sq(0,0,fw,tkH,T2.Slider,2,53,show), tkX,tkY)
-						local tmb = rcd(ci(0,0,7,lighten(T2.Slider,.2),55,show), tkX+fw,tkY+tkH//2)
+						local tmb = rcd(ci(0,0,7,lighten(T2.Slider,.2),55,show), tkX+fw,tkY+tkH//2, {isCircle=true,dh=14})
 						local isF = el.Step~=math.floor(el.Step)
 						local vts = isF and string.format("%.1f",el.Value) or tostring(flr(el.Value))
 						local vtx = rcd(tx(vts,0,0,T2.Placeholder,C.FSM,FNT,54,show), tkX-44,ecy+7)
