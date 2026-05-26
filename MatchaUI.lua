@@ -1027,22 +1027,31 @@ function MatchaUI:CreateWindow(config)
 					else  -- Text / Circle / vector Icon
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
-							local top,bot,strict
 							if m.isCircle then
-								local r=(m.dh or 0)/2; top=ay-r; bot=ay+r; strict=false  -- slide under like text
+								-- Strict-cull (no bleed) PLUS a transparency fade in the last ~12px so
+								-- the thumb dissolves rather than popping at the bar/mask edge. Slide-
+								-- under bleeds because Matcha renders circles over squares regardless
+								-- of ZIndex; the fade lets us keep a smooth visual without bleed.
+								local r=(m.dh or 0)/2; local top=ay-r; local bot=ay+r
+								local contentTop=oy; local contentBot=winBot-BOTPAD
+								local FADE=12
+								if top < contentTop or bot > contentBot then
+									d.Visible=false
+								else
+									d.Visible=vis
+									local a=0
+									if top < contentTop+FADE then a=math.max(a, 1 - (top-contentTop)/FADE) end
+									if bot > contentBot-FADE then a=math.max(a, 1 - (contentBot-bot)/FADE) end
+									if a<0 then a=0 elseif a>1 then a=1 end
+									pcall(function() d.Transparency=a end)
+								end
 							elseif m.isImg then
-								top=ay; bot=ay+(m.oh or 16); strict=true   -- icons cull strictly (composite drawing)
+								-- Icons: strict-cull (composite drawing, can't be masked reliably)
+								local top=ay; local bot=ay+(m.oh or 16)
+								d.Visible = vis and top>=oy and bot<=winBot-BOTPAD
 							else
-								top=ay; bot=ay+(m.dh or 14); strict=false  -- text slides under (square-over-text masking works)
-							end
-							-- Text + circles slide under the bar/bottom-mask (disappear with their row's
-							-- label, no pop at the edge). Icons stay strict-culled because they're built
-							-- from line+circle children that can bleed through squares in Matcha.
-							if strict then
-								local contentTop=oy
-								local contentBot=winBot-BOTPAD
-								d.Visible = vis and top>=contentTop and bot<=contentBot
-							else
+								-- Text: slide under the bar / bottom mask (square-over-text masking works)
+								local top=ay; local bot=ay+(m.dh or 14)
 								d.Visible = vis and top>=winTop and bot<=winBot
 							end
 						end
