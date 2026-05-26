@@ -693,7 +693,9 @@ function MatchaUI:CreateWindow(config)
 	-- shows through cleanly instead of being poked past by wSide's square corner.
 	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH-C.CRN, lighten(T.Background,.022),0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
-	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
+	-- wCont width stops C.CRN px short of the right edge so its square bottom-right corner
+	-- doesn't poke past wBg's rounded bottom-right curve. wBg (same colour) fills the gap.
+	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1-C.CRN,WH-C.TH, T.Background,0,44))
 	-- bottom mask: a bg-coloured strip (ZIndex 60 > content) that rows scroll UNDER, so text
 	-- slides out of view at the bottom the same way it slides under the title bar. Rounded
 	-- corners (C.CRN) match the window; the rounded TOP corners sit over same-colour content
@@ -1351,7 +1353,10 @@ function MatchaUI:CreateWindow(config)
 					local shBg  = rcd(sq(0,0,ew,C.SH,lighten(T2.Background,.03),6,51,tab._active), 0,cy)
 					local shTx  = rcd(tx(sec._title,0,0,T2.Text,C.FSM,FNTB,55,tab._active), C.P,cy+6)
 					local shArr = rcd(tx(sec._collapsed and "+" or "-",0,0,T2.Placeholder,C.FSM,FNT,55,tab._active), ew-18,cy+6)
-					for _,_d in ipairs({shBg,shTx,shArr}) do local _m=M(_d); _m.rowTop=cy; _m.rowH=C.SH end
+					-- subtle separator line below the section header for cleaner visual structure
+					local shLn  = rcd(ln(0,0,0,0,lighten(T2.Background,.10),1,53,tab._active), 0,cy+C.SH+1)
+					local _slm=M(shLn); _slm.crx2=ew; _slm.cry2=cy+C.SH+1
+					for _,_d in ipairs({shBg,shTx,shArr,shLn}) do local _m=M(_d); _m.rowTop=cy; _m.rowH=C.SH end
 					-- collapse hitbox
 					local scy=cy
 					local shrH=chb(0,scy,ew,scy+C.SH, function()
@@ -1838,7 +1843,7 @@ function MatchaUI:CreateWindow(config)
 		pcall(function()
 			wBrd.Size=Vector2.new(WW+2,WH+2); wBg.Size=Vector2.new(WW,WH)
 			wBar.Size=Vector2.new(WW,C.TH); wBarB.Size=Vector2.new(WW,8); wTbSep.Size=Vector2.new(WW,1)
-			wSide.Size=Vector2.new(C.SW,WH-C.TH-C.CRN); wCont.Size=Vector2.new(WW-C.SW-1,WH-C.TH); wBotMask.Size=Vector2.new(WW-C.SW-1,BOTPAD); M(wBotMask).ry=WH-BOTPAD
+			wSide.Size=Vector2.new(C.SW,WH-C.TH-C.CRN); wCont.Size=Vector2.new(WW-C.SW-1-C.CRN,WH-C.TH); wBotMask.Size=Vector2.new(WW-C.SW-1,BOTPAD); M(wBotMask).ry=WH-BOTPAD
 		end)
 		local ml=M(wSLn); ml.ry2=WH
 		M(wClBg).rx=WW-28; M(wClTx).rx=WW-23; M(wMnBg).rx=WW-52; M(wMnTx).rx=WW-48
@@ -2017,6 +2022,7 @@ function MatchaUI:CreateWindow(config)
 		local lmb=false; local drag=false; local dox,doy=0,0; local sldHb=nil
 		local sbDrag=false; local sbOff=0
 		local keyDown={}; local frameN=0; local tgState=false
+		local hoverHb=nil; local hoverStart=0   -- for tooltip hover-delay tracking
 
 		while win._alive do
 			task.wait(0.033)
@@ -2178,13 +2184,22 @@ function MatchaUI:CreateWindow(config)
 			end
 
 			-- tooltip on hover (only when idle, not dragging/clicking)
-			local tip=nil
+			-- Resolve which hitbox the cursor is currently over (if any) and only show its tip
+			-- once the cursor has stayed there for HOVER_DELAY -- avoids tooltip flicker when
+			-- the cursor just sweeps across rows.
+			local HOVER_DELAY=0.4
+			local newHb=nil; local newTip=nil
 			if not lnow and not drag and not sbDrag and not sldHb and not win._minimized and win._active then
 				for i=#win._active._thbs,1,-1 do
 					local h=win._active._thbs[i]
-					if h._tip and mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then tip=h._tip; break end
+					if h._tip and mx>=h.x and mx<=h.x2 and my>=h.y and my<=h.y2 then
+						newHb=h; newTip=h._tip; break
+					end
 				end
 			end
+			if newHb ~= hoverHb then hoverHb=newHb; hoverStart=os.clock() end
+			local tip=nil
+			if newTip and (os.clock()-hoverStart) >= HOVER_DELAY then tip=newTip end
 			if tip then
 				local w=#tip*7+12
 				wTipTx.Text=tip
