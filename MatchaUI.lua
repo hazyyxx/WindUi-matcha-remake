@@ -112,6 +112,37 @@ end
 local function clamp(v,a,b) return math.max(a,math.min(b,v)) end
 local function flr(x) return math.floor(x+.5) end
 
+-- Word-wrap a string to fit within maxWidth px at the given approx char width.
+-- Matcha exposes no TextBounds, so we estimate. Returns a list of lines (at least one).
+local function wrapText(text, maxWidth, charPx)
+	charPx = charPx or 6
+	text = tostring(text or "")
+	if text == "" then return {""} end
+	local maxChars = math.max(1, math.floor((maxWidth - 2) / charPx))
+	if #text <= maxChars and not text:find("\n") then return {text} end
+	local lines = {}
+	for paragraph in (text.."\n"):gmatch("([^\n]*)\n") do
+		local cur = ""
+		for word in paragraph:gmatch("%S+") do
+			local w = word
+			local trial = (cur=="" and w) or (cur.." "..w)
+			if #trial <= maxChars then
+				cur = trial
+			else
+				if cur ~= "" then lines[#lines+1] = cur end
+				while #w > maxChars do
+					lines[#lines+1] = w:sub(1, maxChars)
+					w = w:sub(maxChars + 1)
+				end
+				cur = w
+			end
+		end
+		lines[#lines+1] = cur
+	end
+	if #lines == 0 then lines[1] = "" end
+	return lines
+end
+
 -- Status text/color from a value (true/"working", false/"broken", "dev"/"indev")
 local function statusInfo(v)
 	local s = type(v)=="string" and v:lower() or v
@@ -1474,12 +1505,25 @@ function MatchaUI:CreateWindow(config)
 						el._drawings={bg,lbl,vtx}; el._vtx=vtx
 
 					elseif el.__type=="Paragraph" then
-						elH=44
+						-- Matcha doesn't auto-wrap Drawing.Text, so long descriptions render in
+						-- one line and overflow past the window. Wrap to multiple lines that fit.
+						local LH = 14    -- desc line height
+						local descLines = wrapText(el.Desc, ew - C.P*2, 6)
+						local nLines = math.max(1, #descLines)
+						elH = 24 + nLines*LH + 6
 						local bg  = rcd(sq(0,0,ew,elH,T2.Element,6,50,show), 0,ecy)
 						local ttx = rcd(tx(el.Title,0,0,T2.Text,C.FMD,FNTB,54,show), lblx,ecy+6)
-						local dtx = rcd(tx(el.Desc,0,0,T2.Placeholder,C.FSM,FNT,54,show), C.P,ecy+24)
-						setOwn({bg,ttx,dtx}, show)
-						el._drawings={bg,ttx,dtx}; el._ttx=ttx; el._dtx=dtx
+						local list={bg, ttx}
+						local dtxs={}
+						for i, line in ipairs(descLines) do
+							local dtx = rcd(tx(line,0,0,T2.Placeholder,C.FSM,FNT,54,show), C.P, ecy+24+(i-1)*LH)
+							dtxs[#dtxs+1] = dtx
+							list[#list+1] = dtx
+						end
+						setOwn(list, show)
+						el._drawings = list
+						el._ttx = ttx
+						el._dtx = dtxs[1]   -- back-compat: SetDesc updates first line only (no live re-wrap)
 
 					elseif el.__type=="Status" then
 						local bg  = rcd(sq(0,0,ew,C.EH,T2.Element,6,50,show), 0,ecy)
@@ -1816,12 +1860,6 @@ function MatchaUI:CreateWindow(config)
 				if td and not tgState and not win._kCapture and not win._iCapture then pcall(function() win:Toggle() end) end
 				tgState=td
 			end
-			-- DEBUG: press F8 to copy the active tab's scroll geometry to the clipboard
-			if iskeypressed then
-				if iskeypressed(0x77) then
-					if not win._dbgDumpDn then win._dbgDumpDn=true; pcall(function() win:DumpScroll() end) end
-				else win._dbgDumpDn=false end
-			end
 			if win._hidden then lmb=ismouse1pressed(); continue end
 			local m=getMouse(); if not m then continue end
 			local mx,my=m.X,m.Y
@@ -1994,42 +2032,9 @@ function MatchaUI:CreateWindow(config)
 		end)
 	end)
 
-	-- DIAGNOSTIC (temporary): dump the active tab's content geometry to clipboard so we can
-	-- see exactly what is hidden and why. Call getgenv().MatchaUI:DumpScroll() in Matcha.
-	function win:DumpScroll()
-		local t=win._active
-		local out={ string.format("v%s wy=%d WH=%d winTop=%d winBot=%d contentTop=%d sy=%d sMax=%d",
-			MatchaUI.Version, win.wy, WH, win.wy, win.wy+WH, win.wy+C.TH, win._scrollY, win._scrollMax or 0) }
-		if t then
-			local n=0
-			for _,d in ipairs(t._tdraws) do
-				local m=META[d]
-				if m and m.crx~=nil and n<16 then
-					n=n+1
-					local ay=(win.wy+C.TH)+m.cry-win._scrollY
-					local kind = m.crx2 and "Line" or (m.isImg and "Icon" or (m.isCircle and "Circle" or (m.oh and "Square" or "Text")))
-					local h=m.oh or m.dh or 0
-					local vis; pcall(function() vis=d.Visible end)
-					out[#out+1]=string.format("%-6s cry=%-4.0f ay=%-5.0f h=%-3.0f vis=%-5s own=%s", kind, m.cry, ay, h, tostring(vis), tostring(m.own))
-				end
-			end
-		end
-		local s=table.concat(out,"\n")
-		pcall(function() setclipboard(s) end)
-		pcall(function() if notify then notify("Scroll dump copied to clipboard","MatchaUI",4) end end)
-		return s
-	end
-	MatchaUI._lastWindow=win
-
 	pcall(function() if notify then notify("MatchaUI v"..MatchaUI.Version, "MatchaUI", 3) end end)
 	return win
 end  -- CreateWindow
-
--- DIAGNOSTIC wrapper: getgenv().MatchaUI:DumpScroll()
-function MatchaUI:DumpScroll()
-	if self._lastWindow and self._lastWindow.DumpScroll then return self._lastWindow:DumpScroll() end
-	return "no window"
-end
 
 -- ============================================================
 -- Notify / Popup stubs
