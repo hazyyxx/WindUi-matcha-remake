@@ -4,6 +4,10 @@
 
 local MatchaUI = { Version = "1.1.0", Values = {}, _windows = {} }
 
+-- Show a small legend panel below the window listing every bound Keybind as "Title: [Key]".
+-- Set to false BEFORE CreateWindow (or at runtime + call win:_refreshHotkeys()) to hide it.
+MatchaUI.ShowHotkeys = true
+
 -- ============================================================
 -- Constants
 -- ============================================================
@@ -685,7 +689,9 @@ function MatchaUI:CreateWindow(config)
 		local wSub=reg(tx(config.SubTitle, win.wx+sx, win.wy+11, T.Placeholder, C.FSM,FNT,62))
 		local ms=M(wSub); ms.rx=sx; ms.ry=11
 	end
-	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH, lighten(T.Background,.022),0,50))
+	-- wSide stops C.CRN px short of the window bottom so wBg's rounded bottom-left corner
+	-- shows through cleanly instead of being poked past by wSide's square corner.
+	local wSide = reg(sq(win.wx,win.wy+C.TH,C.SW,WH-C.TH-C.CRN, lighten(T.Background,.022),0,50))
 	local wSLn  = reg(ln(win.wx+C.SW,win.wy+C.TH, win.wx+C.SW,win.wy+WH, lighten(T.Background,.07),1,52))
 	local wCont = reg(sq(win.wx+C.SW+1,win.wy+C.TH,WW-C.SW-1,WH-C.TH, T.Background,0,44))
 	-- bottom mask: a bg-coloured strip (ZIndex 60 > content) that rows scroll UNDER, so text
@@ -694,6 +700,15 @@ function MatchaUI:CreateWindow(config)
 	-- bg so they're invisible. Tall enough (>=16) to fully hide an icon/text line.
 	local BOTPAD=16
 	local wBotMask = reg(sq(win.wx+C.SW+1,win.wy+WH-BOTPAD,WW-C.SW-1,BOTPAD, T.Background,C.CRN,60))
+	-- Hotkey legend panel + pre-allocated text rows (sit just below the window). Visibility
+	-- and content driven by win:_refreshHotkeys(). Hidden until there's at least one bound
+	-- Keybind (and MatchaUI.ShowHotkeys is truthy).
+	local HK_W=210; local HK_LH=15; local HK_MAX=8
+	local hkBg = reg(sq(win.wx, win.wy+WH+8, HK_W, HK_LH*HK_MAX+8, darken(T.Background,.15), 6, 60, false))
+	local hkRows={}
+	for i=1,HK_MAX do
+		hkRows[i] = reg(tx("", win.wx+8, win.wy+WH+8+4+(i-1)*HK_LH, T.Text, C.FSM, FNT, 62, false))
+	end
 	-- scrollbar (geometry managed dynamically by win:_updateScrollbar)
 	local wSbThumb = reg(sq(win.wx+WW-7,win.wy+C.TH+2,4,40, lighten(T.Dialog,.25),2,65,false))
 	-- tooltip (positioned dynamically at cursor)
@@ -718,6 +733,8 @@ function MatchaUI:CreateWindow(config)
 	setRel(wTtx,_titleX,9); setRel(wSide,0,C.TH); setRel(wSLn,C.SW,C.TH,C.SW,WH)
 	setRel(wCont,C.SW+1,C.TH); setRel(wBotMask,C.SW+1,WH-BOTPAD); setRel(wClBg,WW-28,7); setRel(wClTx,WW-23,9)
 	setRel(wMnBg,WW-52,7); setRel(wMnTx,WW-48,10)
+	setRel(hkBg, 0, WH+8)
+	for i,r in ipairs(hkRows) do setRel(r, 8, WH+8+4+(i-1)*HK_LH) end
 
 	local function refreshChrome()
 		for _,d in ipairs(win._all) do
@@ -739,6 +756,39 @@ function MatchaUI:CreateWindow(config)
 
 	-- Scrollbar geometry (driven by active tab's scroll state)
 	local function viewH() return WH-C.TH-BOTPAD end
+	function win:_refreshHotkeys()
+		local enabled = MatchaUI.ShowHotkeys ~= false and not win._hidden
+		-- collect bound keybinds (alpha by title for a stable order)
+		local list = {}
+		for el in pairs(win._keybinds) do
+			if el._vk and el._vk ~= 0 then list[#list+1] = el end
+		end
+		table.sort(list, function(a,b) return (a.Title or "") < (b.Title or "") end)
+		local n = math.min(#list, HK_MAX)
+		if not enabled or n == 0 then
+			pcall(function() hkBg.Visible = false end)
+			for _,r in ipairs(hkRows) do pcall(function() r.Visible = false end) end
+			return
+		end
+		-- panel: ry tracks current WH (resize updates this), size grows with n
+		M(hkBg).ry = WH + 8
+		pcall(function() hkBg.Size = Vector2.new(HK_W, n*HK_LH + 8) end)
+		pcall(function() hkBg.Position = Vector2.new(win.wx, win.wy + WH + 8) end)
+		pcall(function() hkBg.Visible = true end)
+		for i = 1, HK_MAX do
+			local r = hkRows[i]
+			if i <= n then
+				local el = list[i]
+				pcall(function() r.Text = string.format("%s: [%s]", el.Title or "Keybind", el.Value or "") end)
+				M(r).ry = WH + 8 + 4 + (i-1)*HK_LH
+				pcall(function() r.Position = Vector2.new(win.wx + 8, win.wy + WH + 8 + 4 + (i-1)*HK_LH) end)
+				pcall(function() r.Visible = true end)
+			else
+				pcall(function() r.Visible = false end)
+			end
+		end
+	end
+
 	function win:_updateScrollbar()
 		local sMax = win._scrollMax or 0
 		if win._minimized or not win._active or sMax<=0 then
@@ -1164,6 +1214,7 @@ function MatchaUI:CreateWindow(config)
 					elseif type(v)=="number" then self._vk=v; self.Value=VK[v] or tostring(v) end
 					if self._id then MatchaUI.Values[self._id]=self.Value end
 					if self._ktx then self._ktx.Text="["..self.Value.."]" end
+					if win and win._refreshHotkeys then pcall(function() win:_refreshHotkeys() end) end
 					if not nc then pcall(self.Callback,self.Value) end
 				end
 				return addEl(e,c)
@@ -1414,21 +1465,26 @@ function MatchaUI:CreateWindow(config)
 						end
 
 						local ddHb
-						ddHb=chb(0,ecy,ew,ecy+C.EH, function()
-							if el._popupDs then closePopup(); return end
-							tab:_closePopups()   -- close any OTHER element's popup before opening ours
+						local maxVisible=7
+						local function openPopup()
 							el._popupDs={}
-							el._popupBgs={}   -- item -> iBg drawing, used for live re-color in Multi mode
-							local maxS=math.min(#el.Items,7)
-							local pH=maxS*22+4
+							el._popupBgs={}   -- item -> iBg drawing (for live re-color in Multi mode)
+							local count=#el.Items
+							local scrollMax=math.max(0, count-maxVisible)
+							local scroll=math.max(0, math.min(el._popupScroll or 0, scrollMax))
+							el._popupScroll=scroll
+							local visibleCount=math.min(count, maxVisible)
+							local pH=visibleCount*22+4
 							local pY2=ddHb.y+C.EH
 							if pY2+pH>win.wy+WH-8 then pY2=ddHb.y-pH end
 							local pBg=Drawing.new("Square")
 							pBg.Filled=true; pBg.Color=T2.Dialog; pBg.Corner=4; pBg.ZIndex=80
 							pBg.Position=Vector2.new(ddHb.x,pY2); pBg.Size=Vector2.new(ew,pH); pBg.Visible=true
 							el._popupDs[#el._popupDs+1]=pBg
-							for i,item in ipairs(el.Items) do
-								if i>maxS then break end
+							el._popupRect={x=ddHb.x, y=pY2, x2=ddHb.x+ew, y2=pY2+pH}
+							for i=1,visibleCount do
+								local item=el.Items[scroll+i]
+								if not item then break end
 								local iy=pY2+(i-1)*22+2
 								local iBg=Drawing.new("Square"); iBg.Filled=true
 								iBg.Color=el:HasItem(item) and lighten(T2.Accent,.1) or T2.Dialog
@@ -1442,7 +1498,6 @@ function MatchaUI:CreateWindow(config)
 								local itemH={x=ddHb.x+2,y=iy,x2=ddHb.x+ew-2,y2=iy+20,_pop=true,fn=function()
 									if el.Multi then
 										el:Toggle(item)
-										-- live re-color all visible item rows
 										if el._popupBgs then
 											for it,bg2 in pairs(el._popupBgs) do
 												pcall(function() bg2.Color = el:HasItem(it) and lighten(T2.Accent,.1) or T2.Dialog end)
@@ -1454,6 +1509,34 @@ function MatchaUI:CreateWindow(config)
 								end}
 								tab._thbs[#tab._thbs+1]=itemH
 							end
+							-- scroll indicator: a small accent tick on the right margin
+							if scrollMax>0 then
+								local trackH=pH-6
+								local thumbH=math.max(8, flr(trackH*(visibleCount/count)))
+								local thumbY=pY2+3 + (scrollMax>0 and flr((trackH-thumbH)*(scroll/scrollMax)) or 0)
+								local sBg=Drawing.new("Square"); sBg.Filled=true
+								sBg.Color=lighten(T2.Dialog,.25); sBg.Corner=1; sBg.ZIndex=82
+								sBg.Position=Vector2.new(ddHb.x+ew-4, thumbY); sBg.Size=Vector2.new(2, thumbH); sBg.Visible=true
+								el._popupDs[#el._popupDs+1]=sBg
+							end
+						end
+
+						-- Expose a scroll fn so the wheel handler can drive it.
+						el._scrollPopup=function(_, dy)
+							if not el._popupDs then return end
+							local count=#el.Items
+							local scrollMax=math.max(0, count-maxVisible)
+							local s=math.max(0, math.min((el._popupScroll or 0)+dy, scrollMax))
+							if s == (el._popupScroll or 0) then return end
+							el._popupScroll=s
+							closePopup(); openPopup()
+						end
+
+						ddHb=chb(0,ecy,ew,ecy+C.EH, function()
+							if el._popupDs then closePopup(); return end
+							tab:_closePopups()   -- close any OTHER element's popup before opening ours
+							el._popupScroll = el._popupScroll or 0
+							openPopup()
 						end)
 						ddHb._popOwn=true   -- mark as popup trigger so click-outside-to-close skips it
 
@@ -1654,6 +1737,7 @@ function MatchaUI:CreateWindow(config)
 			tab:_refreshContentPos()
 			tab:_refreshContentHbs()
 			win:_updateScrollbar()
+			if win._refreshHotkeys then pcall(function() win:_refreshHotkeys() end) end
 		end  -- tab:_build
 
 		-- First tab auto-activates and builds
@@ -1735,6 +1819,7 @@ function MatchaUI:CreateWindow(config)
 		pcall(function() wTipBg.Visible=false; wTipTx.Visible=false end)
 		if win._active then pcall(function() win._active:_refreshContentPos() end) end
 		win:_updateScrollbar()
+		win:_refreshHotkeys()
 	end
 	function win:Toggle() if win._hidden then win:Show() else win:Hide() end end
 	function win:SetToggleKey(k)
@@ -1753,7 +1838,7 @@ function MatchaUI:CreateWindow(config)
 		pcall(function()
 			wBrd.Size=Vector2.new(WW+2,WH+2); wBg.Size=Vector2.new(WW,WH)
 			wBar.Size=Vector2.new(WW,C.TH); wBarB.Size=Vector2.new(WW,8); wTbSep.Size=Vector2.new(WW,1)
-			wSide.Size=Vector2.new(C.SW,WH-C.TH); wCont.Size=Vector2.new(WW-C.SW-1,WH-C.TH); wBotMask.Size=Vector2.new(WW-C.SW-1,BOTPAD); M(wBotMask).ry=WH-BOTPAD
+			wSide.Size=Vector2.new(C.SW,WH-C.TH-C.CRN); wCont.Size=Vector2.new(WW-C.SW-1,WH-C.TH); wBotMask.Size=Vector2.new(WW-C.SW-1,BOTPAD); M(wBotMask).ry=WH-BOTPAD
 		end)
 		local ml=M(wSLn); ml.ry2=WH
 		M(wClBg).rx=WW-28; M(wClTx).rx=WW-23; M(wMnBg).rx=WW-52; M(wMnTx).rx=WW-48
@@ -1781,6 +1866,7 @@ function MatchaUI:CreateWindow(config)
 		end
 		win:_applyTheme()
 		win:_updateScrollbar()
+		win:_refreshHotkeys()
 	end
 
 	-- Built-in Settings tab (library features)
@@ -2132,8 +2218,22 @@ function MatchaUI:CreateWindow(config)
 			end)
 			if ok and isWheel then
 				local m=getMouse()
-				if m and m.X>=win.wx+C.SW and m.X<=win.wx+WW and m.Y>=win.wy+C.TH and m.Y<=win.wy+WH then
-					local dz=0; pcall(function() dz=inp.Position.Z end)
+				if not m then return end
+				local dz=0; pcall(function() dz=inp.Position.Z end)
+				-- Wheel-over-popup scrolls the popup's items instead of the main content.
+				if win._active then
+					for _,sec in ipairs(win._active._sections) do
+						for _,el in ipairs(sec._elements) do
+							local pr=el._popupRect
+							if pr and el._popupDs and el._scrollPopup
+								and m.X>=pr.x and m.X<=pr.x2 and m.Y>=pr.y and m.Y<=pr.y2 then
+								el:_scrollPopup(dz>0 and -1 or 1)
+								return
+							end
+						end
+					end
+				end
+				if m.X>=win.wx+C.SW and m.X<=win.wx+WW and m.Y>=win.wy+C.TH and m.Y<=win.wy+WH then
 					win._scrollY=clamp(win._scrollY-dz*25, 0, win._scrollMax)
 					if win._active then win._active:_refreshContentPos(); win._active:_refreshContentHbs() end
 				end
@@ -2141,6 +2241,7 @@ function MatchaUI:CreateWindow(config)
 		end)
 	end)
 
+	pcall(function() win:_refreshHotkeys() end)
 	pcall(function() if notify then notify("MatchaUI v"..MatchaUI.Version, "MatchaUI", 3) end end)
 	return win
 end  -- CreateWindow

@@ -31,7 +31,7 @@ s1:Keybind({ Title = "Panic key", Icon = "keyboard", Value = "RShift" })
 
 local s2 = Main:Section("More")
 s2:Dropdown({ Title = "Target",  Icon = "target", Values = { "Closest", "Mouse", "Random" }, Value = "Closest" })
-s2:Dropdown({ Title = "Modules", Icon = "boxes",  Multi = true, Values = { "ESP","Aimbot","Speed","Fly","Noclip" }, Value = { "ESP","Speed" }, Callback = function(list) notify(table.concat(list,", "),"Modules",2) end })
+s2:Dropdown({ Title = "Modules", Icon = "boxes",  Multi = true, Values = { "ESP","Aimbot","Speed","Fly","Noclip","Reach","Killaura","Tracers","Hitbox","Wallhack","Triggerbot","Sprint" }, Value = { "ESP","Speed" }, Callback = function(list) notify(table.concat(list,", "),"Modules",2) end })
 s2:Input({ Title = "Webhook",     Icon = "link",   Placeholder = "https://..." })
 s2:Colorpicker({ Title = "ESP color", Icon = "palette", Default = Color3.fromRGB(0,170,255) })
 s2:Paragraph({ Title = "Note", Desc = "Icons are now drawn with native lines + circles — no PNGs, themeable, crisp." })
