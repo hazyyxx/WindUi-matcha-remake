@@ -1028,13 +1028,16 @@ function MatchaUI:CreateWindow(config)
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
 							local top,bot,strict
-							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r; strict=true
-							elseif m.isImg then top=ay; bot=ay+(m.oh or 16); strict=true
-							else top=ay; bot=ay+(m.dh or 14); strict=false end
-							-- Text slides under (square-over-text masking confirmed working). Circles and
-							-- vector icons (line+circle children) appear to render on top of squares in
-							-- Matcha (type ordering), so the bar/bottom-mask can't hide them. Cull those
-							-- strictly at the content edges so they vanish BEFORE entering the masked band.
+							if m.isCircle then
+								local r=(m.dh or 0)/2; top=ay-r; bot=ay+r; strict=false  -- slide under like text
+							elseif m.isImg then
+								top=ay; bot=ay+(m.oh or 16); strict=true   -- icons cull strictly (composite drawing)
+							else
+								top=ay; bot=ay+(m.dh or 14); strict=false  -- text slides under (square-over-text masking works)
+							end
+							-- Text + circles slide under the bar/bottom-mask (disappear with their row's
+							-- label, no pop at the edge). Icons stay strict-culled because they're built
+							-- from line+circle children that can bleed through squares in Matcha.
 							if strict then
 								local contentTop=oy
 								local contentBot=winBot-BOTPAD
