@@ -898,6 +898,9 @@ function MatchaUI:CreateWindow(config)
 		-- register content drawing: stores relative offset within content area
 		local function rcd(d, cx,cy, opts)
 			local m=M(d); m.crx=cx; m.cry=cy; m.own=true  -- relative to content area origin
+			-- Hide immediately: helpers create drawings at (0,0) until _refreshContentPos places
+			-- them. Matcha can pick up the (0,0) state for a frame -> top-left flash on rebuild.
+			pcall(function() d.Visible=false end)
 			-- Detect type by Size FIRST. Matcha returns a bogus default .Radius (~50) on
 			-- non-circles, so checking d.Radius unconditionally flagged every Text/Square as a
 			-- 100px circle -> the clip math then culled text ~50px before each edge. Only fall
@@ -1275,10 +1278,12 @@ function MatchaUI:CreateWindow(config)
 					local show=tab._active and not sec._collapsed
 					el._elemVis=show
 					local elH=C.EH
-					local hasDesc = el.Desc~=nil and el.Desc~="" and el.__type~="Slider" and el.__type~="Paragraph" and el.__type~="Button"
-					if hasDesc then elH=46 end
-					local titleY = hasDesc and 6 or 9
 					local lblx = (el.Icon and (C.P+22)) or C.P
+					local hasDesc = el.Desc~=nil and el.Desc~="" and el.__type~="Slider" and el.__type~="Paragraph" and el.__type~="Button"
+					-- Wrap long descriptions so they don't overflow the window (esp. Small mode).
+					local descLines = hasDesc and wrapText(el.Desc, ew - lblx - C.P, 6) or nil
+					if hasDesc then elH = 24 + #descLines*12 + 10 end
+					local titleY = hasDesc and 6 or 9
 					local _thb0=#tab._thbs
 
 					if el.__type=="Toggle" and el._ctype=="Checkbox" then
@@ -1568,9 +1573,11 @@ function MatchaUI:CreateWindow(config)
 						if ic then rcd(ic, C.P, ecy+(C.EH-isz)//2); local imm=M(ic); imm.own=show; imm.elemVis=show; imm.isImg=true; imm.oh=isz; table.insert(el._drawings, ic) end
 					end
 					if el.Tooltip then for hi=_thb0+1,#tab._thbs do if not tab._thbs[hi]._tip then tab._thbs[hi]._tip=el.Tooltip end end end
-					if hasDesc and el._drawings then
-						local _ds=rcd(tx(el.Desc,0,0,MatchaUI.Theme.Placeholder,C.FSM,FNT,54,show), lblx,ecy+24)
-						local _dm=M(_ds); _dm.own=show; _dm.elemVis=show; table.insert(el._drawings,_ds)
+					if hasDesc and el._drawings and descLines then
+						for i, line in ipairs(descLines) do
+							local _ds=rcd(tx(line,0,0,MatchaUI.Theme.Placeholder,C.FSM,FNT,54,show), lblx, ecy+24+(i-1)*12)
+							local _dm=M(_ds); _dm.own=show; _dm.elemVis=show; table.insert(el._drawings,_ds)
+						end
 					end
 					for _,_d in ipairs(el._drawings or {}) do local _m=M(_d); _m.rowTop=ecy; _m.rowH=elH end
 					cy=cy+elH+7
