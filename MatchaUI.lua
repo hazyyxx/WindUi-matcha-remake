@@ -1018,14 +1018,24 @@ function MatchaUI:CreateWindow(config)
 							d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 							pcall(function() if d.Size.Y~=m.oh then d.Size=Vector2.new(d.Size.X,m.oh) end end)
 						end
-					else  -- Text / Circle / vector Icon -> slide under the masks; hide only off-window
+					else  -- Text / Circle / vector Icon
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
-							local top,bot
-							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r
-							elseif m.isImg then top=ay; bot=ay+(m.oh or 16)
-							else top=ay; bot=ay+(m.dh or 14) end
-							d.Visible = vis and top>=winTop and bot<=winBot
+							local top,bot,strict
+							if m.isCircle then local r=(m.dh or 0)/2; top=ay-r; bot=ay+r; strict=true
+							elseif m.isImg then top=ay; bot=ay+(m.oh or 16); strict=true
+							else top=ay; bot=ay+(m.dh or 14); strict=false end
+							-- Text slides under (square-over-text masking confirmed working). Circles and
+							-- vector icons (line+circle children) appear to render on top of squares in
+							-- Matcha (type ordering), so the bar/bottom-mask can't hide them. Cull those
+							-- strictly at the content edges so they vanish BEFORE entering the masked band.
+							if strict then
+								local contentTop=oy
+								local contentBot=winBot-BOTPAD
+								d.Visible = vis and top>=contentTop and bot<=contentBot
+							else
+								d.Visible = vis and top>=winTop and bot<=winBot
+							end
 						end
 					end
 				end
