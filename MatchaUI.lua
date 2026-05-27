@@ -1028,23 +1028,12 @@ function MatchaUI:CreateWindow(config)
 						d.Position=Vector2.new(flr(ax+.5),flr(ay+.5))
 						if m.own then
 							if m.isCircle then
-								-- Strict-cull (no bleed) PLUS a transparency fade in the last ~12px so
-								-- the thumb dissolves rather than popping at the bar/mask edge. Slide-
-								-- under bleeds because Matcha renders circles over squares regardless
-								-- of ZIndex; the fade lets us keep a smooth visual without bleed.
+								-- Slide under bar/bottom-mask, same as text. User prefers the smooth
+								-- "go under and disappear" feel over a strict cut-off at the bar edge,
+								-- even if Matcha leaks a couple px of the thumb through the bar.
 								local r=(m.dh or 0)/2; local top=ay-r; local bot=ay+r
-								local contentTop=oy; local contentBot=winBot-BOTPAD
-								local FADE=12
-								if top < contentTop or bot > contentBot then
-									d.Visible=false
-								else
-									d.Visible=vis
-									local a=0
-									if top < contentTop+FADE then a=math.max(a, 1 - (top-contentTop)/FADE) end
-									if bot > contentBot-FADE then a=math.max(a, 1 - (contentBot-bot)/FADE) end
-									if a<0 then a=0 elseif a>1 then a=1 end
-									pcall(function() d.Transparency=a end)
-								end
+								d.Visible = vis and top>=winTop and bot<=winBot
+								pcall(function() d.Transparency=0 end)  -- clear any leftover fade
 							elseif m.isImg then
 								-- Icons: strict-cull (composite drawing, can't be masked reliably)
 								local top=ay; local bot=ay+(m.oh or 16)
